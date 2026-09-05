@@ -1,0 +1,29 @@
+{
+  "pinned_actions": [
+    {
+      "action": "actions/checkout",
+      "version": "v4.2.2",
+      "commit_sha": "11bd71901bbe5b1630ceea73d27597364c9af683",
+      "reason": "Official GitHub checkout action pinned to commit SHA for reproducibility and supply chain security."
+    },
+    {
+      "action": "actions/setup-python",
+      "version": "v5.4.0",
+      "commit_sha": "42375524e23c412d93fb67b49958b491fce71c38",
+      "reason": "Python environment setup for verification and telemetry analysis."
+    },
+    {
+      "action": "ilammy/msvc-dev-cmd",
+      "version": "v1.13.0",
+      "commit_sha": "a102174a2b586eec2ea151a69e6fd14404a8ce7c",
+      "reason": "Configures MSVC environment variables on Windows GitHub Actions runner."
+    }
+  ],
+  "system_package_managers": [
+    {
+      "manager": "chocolatey",
+      "package": "vulkan-sdk",
+      "reason": "Official Khronos Vulkan SDK installed on Windows CI runner without deprecated GitHub Actions."
+    }
+  ]
+}

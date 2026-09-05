@@ -1,0 +1,43 @@
+name: Tests (Windows)
+
+on:
+  push:
+    branches: [ main, "feature/**" ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  tests-windows:
+    name: tests-windows
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Setup MSVC environment
+        uses: ilammy/msvc-dev-cmd@a102174a2b586eec2ea151a69e6fd14404a8ce7c
+
+      - name: Install Vulkan SDK
+        shell: pwsh
+        run: |
+          choco install vulkan-sdk -y --no-progress
+          $vks = Get-ChildItem -Path C:\VulkanSDK -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
+          if ($vks) {
+            echo "VULKAN_SDK=$($vks.FullName)" >> $env:GITHUB_ENV
+            echo "$($vks.FullName)\Bin" >> $env:GITHUB_PATH
+          }
+
+      - name: Configure CMake
+        run: cmake -B build
+
+      - name: Build Test Target
+        run: cmake --build build --config Release --target sha_tests
+
+      - name: Execute Full Test Suite
+        shell: pwsh
+        run: |
+          $binDir = if (Test-Path build\Release) { "build\Release" } else { "build" }
+          & "$binDir\sha_tests.exe"

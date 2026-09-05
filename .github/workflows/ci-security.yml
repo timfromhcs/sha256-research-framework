@@ -1,0 +1,43 @@
+name: Security & Anti-Cheating Controls
+
+on:
+  push:
+    branches: [ main, "feature/**" ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  security-audit:
+    name: security-audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Setup Python
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38
+        with:
+          python-version: "3.11"
+
+      - name: Secret Scan (Grep Pattern Audit)
+        run: |
+          echo "Scanning for accidental token or private key patterns..."
+          if grep -rnEI "(ghp_[A-Za-z0-9]{36}|BEGIN (RSA|EC|OPENSSH) PRIVATE KEY|password\s*[:=]\s*['\"][^'\"]+['\"])" \
+             --exclude-dir=".git" --exclude-dir="build" .; then
+            echo "FATAL: Secret pattern discovered in repository!"
+            exit 1
+          fi
+          echo "No secret patterns detected."
+
+      - name: Verify CODEOWNERS Presence & Syntax
+        run: |
+          test -f .github/CODEOWNERS || { echo "CODEOWNERS missing"; exit 1; }
+          grep -q "@timfromhcs" .github/CODEOWNERS || { echo "Owner @timfromhcs missing in CODEOWNERS"; exit 1; }
+          echo "CODEOWNERS verified."
+
+      - name: Verify JSON Schemas
+        run: |
+          python -c "import json; json.load(open('schemas/manifest.schema.json')); json.load(open('schemas/claim.schema.json')); print('Schemas valid.')"

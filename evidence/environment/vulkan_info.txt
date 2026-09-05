@@ -1,0 +1,52 @@
+==========
+VULKANINFO
+==========
+
+Vulkan Instance Version: 1.4.357
+
+
+Instance Extensions: count = 13
+-------------------------------
+VK_EXT_debug_report                    : extension revision 10
+VK_EXT_debug_utils                     : extension revision 2
+VK_EXT_swapchain_colorspace            : extension revision 5
+VK_KHR_device_group_creation           : extension revision 1
+VK_KHR_external_fence_capabilities     : extension revision 1
+VK_KHR_external_memory_capabilities    : extension revision 1
+VK_KHR_external_semaphore_capabilities : extension revision 1
+VK_KHR_get_physical_device_properties2 : extension revision 2
+VK_KHR_get_surface_capabilities2       : extension revision 1
+VK_KHR_portability_enumeration         : extension revision 1
+VK_KHR_surface                         : extension revision 25
+VK_KHR_win32_surface                   : extension revision 6
+VK_LUNARG_direct_driver_loading        : extension revision 1
+
+Instance Layers: count = 10
+---------------------------
+VK_LAYER_AMD_switchable_graphics  AMD switchable graphics layer                                                                                     1.4.315  version 1
+VK_LAYER_KHRONOS_profiles         Khronos Profiles layer                                                                                            1.4.357  version 1
+VK_LAYER_KHRONOS_shader_object    Khronos Shader object layer                                                                                       1.4.357  version 1
+VK_LAYER_KHRONOS_synchronization2 Khronos Synchronization2 layer                                                                                    1.4.357  version 1
+VK_LAYER_KHRONOS_validation       Khronos Validation Layer                                                                                          1.4.357  version 1
+VK_LAYER_LUNARG_api_dump          LunarG API dump layer                                                                                             1.4.357  version 2
+VK_LAYER_LUNARG_crash_diagnostic  Crash Diagnostic Layer is a crash/hang debugging tool that helps determines GPU progress in a Vulkan application. 1.4.357  version 1
+VK_LAYER_LUNARG_gfxreconstruct    GFXReconstruct Capture Layer Version 1.0.5                                                                        1.4.357  version 4194309
+VK_LAYER_LUNARG_monitor           Execution Monitoring Layer                                                                                        1.4.357  version 1
+VK_LAYER_LUNARG_screenshot        LunarG image capture layer                                                                                        1.4.357  version 1
+
+Devices:
+========
+GPU0:
+	apiVersion         = 1.4.315
+	driverVersion      = 2.0.353
+	vendorID           = 0x1002
+	deviceID           = 0x1681
+	deviceType         = PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU
+	deviceName         = AMD Radeon(TM) Graphics
+	driverID           = DRIVER_ID_AMD_PROPRIETARY
+	driverName         = AMD proprietary driver
+	driverInfo         = 26.6.1 (AMD proprietary shader compiler)
+	conformanceVersion = 1.4.0.0
+	deviceUUID         = 00000000-e500-0000-0000-000000000000
+	driverUUID         = 414d442d-5749-4e2d-4452-560000000000
+

@@ -1,0 +1,4 @@
+{
+  "rounds": 10,
+  "solver": "Kissat"
+}

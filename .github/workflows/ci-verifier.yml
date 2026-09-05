@@ -1,0 +1,55 @@
+name: Independent Verifier & Adversarial Gate
+
+on:
+  push:
+    branches: [ main, "feature/**" ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  verifier-independent:
+    name: verifier-independent
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Setup MSVC environment
+        uses: ilammy/msvc-dev-cmd@a102174a2b586eec2ea151a69e6fd14404a8ce7c
+
+      - name: Install Vulkan SDK
+        shell: pwsh
+        run: |
+          choco install vulkan-sdk -y --no-progress
+          $vks = Get-ChildItem -Path C:\VulkanSDK -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
+          if ($vks) {
+            echo "VULKAN_SDK=$($vks.FullName)" >> $env:GITHUB_ENV
+            echo "$($vks.FullName)\Bin" >> $env:GITHUB_PATH
+          }
+
+      - name: Configure CMake
+        run: cmake -B build
+
+      - name: Build Verifier & Adversarial Targets
+        run: cmake --build build --config Release --target sha-verifier sha_adversarial_tests
+
+      - name: Verify NIST Known-Answer Vectors
+        shell: pwsh
+        run: |
+          $binDir = if (Test-Path build\Release) { "build\Release" } else { "build" }
+          & "$binDir\sha-verifier.exe" test-vectors
+
+      - name: Verify Hostile Negative Rejection Tests
+        shell: pwsh
+        run: |
+          $binDir = if (Test-Path build\Release) { "build\Release" } else { "build" }
+          & "$binDir\sha-verifier.exe" test-negative
+
+      - name: Run Adversarial Tamper Detection Suite
+        shell: pwsh
+        run: |
+          $binDir = if (Test-Path build\Release) { "build\Release" } else { "build" }
+          & "$binDir\sha_adversarial_tests.exe"

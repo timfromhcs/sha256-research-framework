@@ -1,0 +1,47 @@
+name: Build (Windows MSVC)
+
+on:
+  push:
+    branches: [ main, "feature/**" ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows-msvc:
+    name: build-windows-msvc
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Setup MSVC environment
+        uses: ilammy/msvc-dev-cmd@a102174a2b586eec2ea151a69e6fd14404a8ce7c
+
+      - name: Install Vulkan SDK
+        shell: pwsh
+        run: |
+          choco install vulkan-sdk -y --no-progress
+          $vks = Get-ChildItem -Path C:\VulkanSDK -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
+          if ($vks) {
+            echo "VULKAN_SDK=$($vks.FullName)" >> $env:GITHUB_ENV
+            echo "$($vks.FullName)\Bin" >> $env:GITHUB_PATH
+          }
+
+      - name: Configure CMake
+        run: cmake -B build
+
+      - name: Build All Targets (Release)
+        run: cmake --build build --config Release --parallel 4
+
+      - name: Verify Binary Existence
+        shell: pwsh
+        run: |
+          $binDir = if (Test-Path build\Release) { "build\Release" } else { "build" }
+          if (-not (Test-Path "$binDir\sha-research.exe")) { throw "sha-research.exe missing" }
+          if (-not (Test-Path "$binDir\sha_tests.exe")) { throw "sha_tests.exe missing" }
+          if (-not (Test-Path "$binDir\sha-verifier.exe")) { throw "sha-verifier.exe missing" }
+          if (-not (Test-Path "$binDir\sha_adversarial_tests.exe")) { throw "sha_adversarial_tests.exe missing" }
+          Write-Host "All binaries verified in $binDir."

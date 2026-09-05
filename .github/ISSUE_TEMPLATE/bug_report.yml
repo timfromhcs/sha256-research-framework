@@ -1,0 +1,28 @@
+name: Bug Report
+description: File a bug report or reproducibility issue
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for filing a bug report.
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Detailed description of the observed defect.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction Steps
+      description: Exact commands used to reproduce.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment Info
+      description: Output of `sha-research doctor` or OS/compiler versions.
+    validations:
+      required: true

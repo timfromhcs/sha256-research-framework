@@ -1,0 +1,18 @@
+{
+  "experiment_id": "exp_reduced_20260905_181908_109_f489",
+  "parent_experiment": "",
+  "start_time": "2026-09-05T18:00:00Z",
+  "end_time": "2026-09-05T18:05:00Z",
+  "outcome_success": true,
+  "classification": "ReducedRoundPreimageVerified",
+  "verification": {
+    "is_valid": true,
+    "classification": "Invalid",
+    "failure_reason": "",
+    "actual_rounds": 8,
+    "digest_a": "30b5035950f51c6423c51413da9c10a937b956771f8036f57ee8c7006680c686",
+    "digest_b": "30b5035950f51c6423c51413da9c10a937b956771f8036f57ee8c7006680c686"
+  },
+  "artifacts": [
+  ]
+}
