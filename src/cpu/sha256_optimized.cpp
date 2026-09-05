@@ -4,6 +4,8 @@
 #include <atomic>
 #include <chrono>
 #include <sstream>
+#include <cstring>
+#include <utility>
 
 #if defined(_MSC_VER)
 #include <intrin.h>
@@ -114,12 +116,15 @@ void Sha256Optimized::compress_block_unrolled(Sha256State& state, const uint8_t 
     state[7] += h;
 }
 
-Sha256Digest Sha256Optimized::hash(const void* data, size_t len) noexcept {
-    // For single-block small inputs (<= 55 bytes), fast path
+Sha256Digest Sha256Optimized::hash_path(const void* data, size_t len, Path path) noexcept {
+    if (path == Path::ScalarReference) {
+        return Sha256Scalar::hash(data, len);
+    }
+    // UnrolledPortable: single-block fast path, otherwise scalar streaming.
     if (len <= 55) {
         Sha256State state = SHA256_IV;
         uint8_t block[64] = {0};
-        std::memcpy(block, data, len);
+        if (len > 0) std::memcpy(block, data, len);
         block[len] = 0x80;
         store_be64(block + 56, static_cast<uint64_t>(len) * 8);
 
@@ -134,6 +139,10 @@ Sha256Digest Sha256Optimized::hash(const void* data, size_t len) noexcept {
 
     // General path via streaming scalar reference
     return Sha256Scalar::hash(data, len);
+}
+
+Sha256Digest Sha256Optimized::hash(const void* data, size_t len) noexcept {
+    return hash_path(data, len, Path::UnrolledPortable);
 }
 
 void Sha256Optimized::hash_batch(
@@ -187,21 +196,25 @@ Sha256Optimized::SearchResult Sha256Optimized::search_prefix_zeros(
     std::atomic<uint64_t> total_hashes{0};
     auto start_time = std::chrono::steady_clock::now();
 
-    uint64_t per_thread_max = target.max_iterations / thread_count;
+    // Exact partition of [0, max_iterations) across threads (single source
+    // of truth shared with partition_range()): union == full domain.
+    auto ranges = partition_range(target.max_iterations, thread_count);
     std::vector<std::thread> threads;
     threads.reserve(thread_count);
 
     const uint32_t full_zero_bytes = target.target_zero_bits / 8;
     const uint32_t rem_zero_bits = target.target_zero_bits % 8;
-    const uint8_t rem_mask = static_cast<uint8_t>(0xFFU << (8 - rem_zero_bits));
+    const uint8_t rem_mask = (rem_zero_bits == 0)
+        ? static_cast<uint8_t>(0x00)
+        : static_cast<uint8_t>(0xFFU << (8 - rem_zero_bits));
 
     for (unsigned int tid = 0; tid < thread_count; ++tid) {
         threads.emplace_back([&, tid]() {
             std::vector<uint8_t> buffer(prefix_len + sizeof(uint64_t));
             std::memcpy(buffer.data(), prefix, prefix_len);
 
-            uint64_t start_nonce = static_cast<uint64_t>(tid) * per_thread_max;
-            uint64_t end_nonce = start_nonce + per_thread_max;
+            uint64_t start_nonce = ranges[tid].first;
+            uint64_t end_nonce = ranges[tid].second;
 
             uint64_t local_count = 0;
             for (uint64_t nonce = start_nonce; nonce < end_nonce && !stop_flag.load(std::memory_order_relaxed); ++nonce) {
@@ -244,6 +257,22 @@ Sha256Optimized::SearchResult Sha256Optimized::search_prefix_zeros(
     result.hash_rate = result.elapsed_seconds > 0.0 ? (result.hashes_computed / result.elapsed_seconds) : 0.0;
 
     return result;
+}
+
+std::vector<std::pair<uint64_t, uint64_t>> Sha256Optimized::partition_range(
+    uint64_t max_iterations, unsigned int thread_count)
+{
+    std::vector<std::pair<uint64_t, uint64_t>> ranges;
+    if (thread_count == 0 || max_iterations == 0) return ranges;
+    const uint64_t base = max_iterations / thread_count;
+    const uint64_t rem = max_iterations % thread_count;
+    ranges.reserve(thread_count);
+    for (unsigned int tid = 0; tid < thread_count; ++tid) {
+        uint64_t start = static_cast<uint64_t>(tid) * base + (tid < rem ? tid : rem);
+        uint64_t count = base + (tid < rem ? 1 : 0);
+        ranges.emplace_back(start, start + count);
+    }
+    return ranges;
 }
 
 } // namespace sha256_research

@@ -14,6 +14,8 @@
 #include <fstream>
 #include <filesystem>
 #include <iomanip>
+#include <chrono>
+#include <ctime>
 
 using namespace sha256_research;
 
@@ -109,7 +111,7 @@ int cmd_test() {
             std::cout << "   [FAIL] Vulkan outputs differed from CPU reference!\n";
         }
     } else {
-        std::cout << "   [SKIP] Vulkan runtime not active or no compute device found.\n";
+        std::cout << "   [SKIP] Vulkan runtime not active, no compute device found, or CPU-only build.\n";
         vk_ok = true; // Not an error if platform doesn't support
     }
 
@@ -137,14 +139,20 @@ int cmd_status() {
     std::cout << "[Status] SHA-256 Research Framework Status:\n";
     std::cout << " - CPU Features: " << Sha256Optimized::features().to_string() << "\n";
 
-    Sha256VulkanEngine vk;
-    if (vk.initialize("shaders")) {
-        auto info = vk.context().device_info();
-        std::cout << " - Vulkan Compute Device: " << info.device_name
-                  << " (Driver: " << info.driver_version << ", API: " << info.api_version << ")\n";
-    } else {
-        std::cout << " - Vulkan Compute: Not available / Not initialized\n";
+#if SHA256_HAVE_VULKAN
+    {
+        Sha256VulkanEngine vk;
+        if (vk.initialize("shaders")) {
+            auto info = vk.context().device_info();
+            std::cout << " - Vulkan Compute Device: " << info.device_name
+                      << " (Driver: " << info.driver_version << ", API: " << info.api_version << ")\n";
+        } else {
+            std::cout << " - Vulkan Compute: Not available / Not initialized\n";
+        }
     }
+#else
+    std::cout << " - Vulkan Compute: Not compiled in (CPU-only build)\n";
+#endif
 
     std::cout << " - SAT/SMT Solvers:\n";
     auto solvers = SolverFactory::get_available_solvers();
@@ -163,15 +171,34 @@ int cmd_experiment_run(int rounds, const std::string& solver_str) {
     else if (solver_str == "cryptominisat") st = SolverType::CryptoMiniSat;
     else if (solver_str == "minisat") st = SolverType::MiniSat;
 
+    if (rounds < 1) rounds = 1;
+    if (rounds > 64) rounds = 64;
+
+    auto utc_now = []() {
+        auto now = std::chrono::system_clock::now();
+        std::time_t tt = std::chrono::system_clock::to_time_t(now);
+        std::tm bt{};
+#if defined(_WIN32)
+        gmtime_s(&bt, &tt);
+#else
+        gmtime_r(&tt, &bt);
+#endif
+        char buf[32];
+        std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &bt);
+        return std::string(buf);
+    };
+
     ExperimentStorage storage("evidence");
     ExperimentMetadata meta;
     meta.experiment_id = ExperimentStorage::generate_experiment_id("exp_reduced");
-    meta.target_rounds = rounds;
+    meta.target_rounds = static_cast<uint32_t>(rounds);
     meta.solver_name = SolverFactory::solver_name(st);
     meta.research_question = "Can SAT solvers find a valid 1-block preimage for " + std::to_string(rounds) + "-round SHA-256?";
     meta.hypothesis = "Modern CDCL solvers will efficiently invert reduced-round SHA-256 for small round counts (e.g. <= 16 rounds).";
-    meta.start_time = "2026-09-05T18:00:00Z";
-    meta.configuration_json = "{\n  \"rounds\": " + std::to_string(rounds) + ",\n  \"solver\": \"" + meta.solver_name + "\"\n}\n";
+    meta.start_time = utc_now();
+    meta.deterministic_seed = 0xC0FFEE01u;
+    meta.command_line = std::string("sha-research experiment run ") + std::to_string(rounds) + " " + solver_str;
+    meta.configuration_json = "{\"rounds\": " + std::to_string(rounds) + ", \"solver\": \"" + meta.solver_name + "\", \"seed\": 3235824897}";
 
     std::string exp_dir = storage.create_experiment_run(meta);
     std::cout << "   Created experiment run: " << meta.experiment_id << " in " << exp_dir << "\n";
@@ -203,18 +230,64 @@ int cmd_experiment_run(int rounds, const std::string& solver_str) {
 
     std::cout << "   Invoking solver " << meta.solver_name << "...\n";
     auto sol_res = solver->solve_cnf(enc.cnf, 60);
-
+    meta.solver_version = sol_res.stats.solver_version;
+    if (!sol_res.stats.command_line.empty()) {
+        meta.command_line += std::string(" | solver_cmd: ") + sol_res.stats.command_line;
+    }
     std::cout << "   Solver status: " << (sol_res.is_sat() ? "SAT" : "UNSAT/TIMEOUT")
               << " in " << sol_res.stats.wall_time_seconds << " seconds.\n";
 
     VerificationVerdict verdict;
     std::vector<ArtifactRecord> artifacts;
 
+    // Persist CNF as a hashed evidence artifact.
+    {
+        std::filesystem::create_directories(std::filesystem::path(exp_dir) / "artifacts");
+        std::string cnf_artifact = (std::filesystem::path(exp_dir) / "artifacts" / "problem.cnf").string();
+        if (enc.cnf.write_dimacs_file(cnf_artifact)) {
+            ArtifactRecord rec;
+            rec.relative_path = "artifacts/problem.cnf";
+            rec.sha256_hash = ExperimentStorage::hash_file(cnf_artifact);
+            std::error_code ec;
+            rec.size_bytes = std::filesystem::file_size(cnf_artifact, ec);
+            rec.description = "SAT CNF for reduced-round preimage";
+            artifacts.push_back(rec);
+        }
+        std::string log_path = (std::filesystem::path(exp_dir) / "artifacts" / "solver_stdout.txt").string();
+        std::ofstream lf(log_path);
+        if (lf.is_open()) {
+            lf << sol_res.stats.raw_stdout;
+            lf.close();
+            ArtifactRecord rec;
+            rec.relative_path = "artifacts/solver_stdout.txt";
+            rec.sha256_hash = ExperimentStorage::hash_file(log_path);
+            std::error_code ec;
+            rec.size_bytes = std::filesystem::file_size(log_path, ec);
+            rec.description = "Solver stdout capture";
+            artifacts.push_back(rec);
+        }
+    }
+
     if (sol_res.is_sat()) {
         auto msg_words = SatEncoder::extract_message_from_model(sol_res.model, enc.message_vars);
         std::vector<uint8_t> cand_block(64);
         for (size_t i = 0; i < 16; ++i) {
             store_be32(cand_block.data() + i * 4, msg_words[i]);
+        }
+
+        {
+            std::string cand_path = (std::filesystem::path(exp_dir) / "artifacts" / "candidate_block.bin").string();
+            std::ofstream cf(cand_path, std::ios::binary);
+            if (cf.is_open()) {
+                cf.write(reinterpret_cast<const char*>(cand_block.data()), static_cast<std::streamsize>(cand_block.size()));
+                cf.close();
+                ArtifactRecord rec;
+                rec.relative_path = "artifacts/candidate_block.bin";
+                rec.sha256_hash = ExperimentStorage::hash_file(cand_path);
+                rec.size_bytes = cand_block.size();
+                rec.description = "Reconstructed candidate message block";
+                artifacts.push_back(rec);
+            }
         }
 
         // Verify with IndependentVerifier
@@ -228,7 +301,8 @@ int cmd_experiment_run(int rounds, const std::string& solver_str) {
             meta.classification = "ReducedRoundPreimageVerified";
             meta.conclusion = "Successfully found valid message block producing target digest for " + std::to_string(rounds) + " rounds.";
             verdict.is_valid = true;
-            verdict.actual_rounds = rounds;
+            verdict.classification = CandidateClassification::ReducedRoundPreimage;
+            verdict.actual_rounds = static_cast<uint32_t>(rounds);
             verdict.digest_a = cand_digest;
             verdict.digest_b = target_digest;
             std::cout << "   [VERIFIED] Candidate block matches target digest!\n";
@@ -245,7 +319,7 @@ int cmd_experiment_run(int rounds, const std::string& solver_str) {
         meta.conclusion = "Solver did not find solution within timeout.";
     }
 
-    meta.end_time = "2026-09-05T18:05:00Z";
+    meta.end_time = utc_now();
     storage.finalize_experiment(meta.experiment_id, meta, artifacts, verdict);
     std::cout << "   Experiment finalized: " << meta.experiment_id << "\n";
     return 0;

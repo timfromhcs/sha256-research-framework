@@ -34,6 +34,10 @@ struct SolverStatistics {
     int exit_code{0};
     std::string raw_stdout;
     std::string raw_stderr;
+    // Reproducibility / isolation metadata (Phase 7 + Phase 10)
+    std::string solver_version;   // best-effort captured version string
+    std::string command_line;     // exact command executed (quoted)
+    std::string work_dir;         // unique per-run workspace that was used
 };
 
 struct SolverResult {

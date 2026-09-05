@@ -22,5 +22,7 @@ public:
 ```
 
 ## Performance on Reduced-Round Preimages
+Historical example measurements on the reference machine (AMD Ryzen 7 7735HS, WSL2 solvers), not guarantees — rerun `sha-research experiment run [rounds] [solver]` to reproduce on your hardware:
 - **8 Rounds**: Solved in 0.179s by CaDiCaL (8,832 variables, 35,520 clauses).
 - **10 Rounds**: Solved in 0.130s by Kissat (10,596 variables, 43,338 clauses).
+Solvers are optional and environment-dependent: when no solver is installed, SAT-dependent tests skip gracefully and experiments report unavailability instead of fabricating results.

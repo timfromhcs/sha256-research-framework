@@ -6,6 +6,7 @@
 #include <chrono>
 #include <thread>
 #include <cstring>
+#include <ctime>
 #include <sstream>
 #include <iomanip>
 #include <iostream>
@@ -105,7 +106,11 @@ BenchmarkMetric BenchmarkSuite::benchmark_vulkan(size_t batch_size, uint32_t rou
 
     Sha256VulkanEngine vk;
     if (!vk.initialize("shaders")) {
-        m.notes = "Vulkan initialization unavailable or failed";
+#if SHA256_HAVE_VULKAN
+        m.notes = "Vulkan initialization unavailable or failed (runtime/device)";
+#else
+        m.notes = "Vulkan NOT compiled in (CPU-only build; skipped)";
+#endif
         return m;
     }
 
@@ -169,9 +174,39 @@ std::string BenchmarkReport::to_markdown() const {
 
 BenchmarkReport BenchmarkSuite::run_full_suite() {
     BenchmarkReport rep;
-    rep.timestamp = "2026-09-05";
-    rep.cpu_model = "AMD Ryzen 7 7735HS (8C/16T)";
-    rep.gpu_model = "AMD Radeon 680M Graphics (Vulkan 1.4)";
+    // Real measured metadata (never hardcoded): UTC timestamp, CPU features,
+    // thread count, compiler, build type, Vulkan compile flag.
+    auto now = std::chrono::system_clock::now();
+    std::time_t tt = std::chrono::system_clock::to_time_t(now);
+    std::tm bt{};
+#if defined(_WIN32)
+    gmtime_s(&bt, &tt);
+#else
+    gmtime_r(&tt, &bt);
+#endif
+    char ts[32];
+    std::strftime(ts, sizeof(ts), "%Y-%m-%dT%H:%M:%SZ", &bt);
+    rep.timestamp = ts;
+    unsigned int hw = std::thread::hardware_concurrency();
+    rep.cpu_model = "features=[" + Sha256Optimized::features().to_string() +
+                    "] hw_threads=" + std::to_string(hw);
+#if defined(_MSC_VER)
+    rep.cpu_model += " compiler=MSVC";
+#elif defined(__clang__)
+    rep.cpu_model += " compiler=Clang";
+#elif defined(__GNUC__)
+    rep.cpu_model += " compiler=GCC";
+#endif
+#ifdef NDEBUG
+    rep.cpu_model += " build=Release";
+#else
+    rep.cpu_model += " build=Debug";
+#endif
+#if SHA256_HAVE_VULKAN
+    rep.gpu_model = "Vulkan compiled in (see per-metric device/notes)";
+#else
+    rep.gpu_model = "Vulkan NOT compiled in (CPU-only build)";
+#endif
 
     rep.metrics.push_back(benchmark_scalar_cpu(100000));
     rep.metrics.push_back(benchmark_optimized_cpu_single(200000));

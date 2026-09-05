@@ -11,10 +11,14 @@ The framework utilizes modern CMake (version >= 3.20) with target-based configur
 
 ## CMake Presets
 Defined in `CMakePresets.json`:
-- `windows-msvc-release`: Uses Visual Studio 17 2022 with 64-bit architecture and Release optimization (`/O2 /arch:AVX2 /utf-8`).
+- `windows-msvc-release`: Uses Visual Studio 17 2022 with 64-bit architecture and Release optimization (`/O2 /utf-8`).
 - `windows-ninja-release`: Uses Ninja generator on Windows.
 - `wsl-linux-release`: Uses Ninja generator on Linux/WSL2.
 
 ## Compiler Flags
-- **MSVC**: `/W4 /O2 /permissive- /utf-8 /arch:AVX2`
-- **GCC / Clang**: `-Wall -Wextra -O3 -mavx2 -std=c++20`
+Portable flags only — no mandatory instruction-set extensions (binaries must run on any x86-64 machine; CPUID detection is informational):
+- **MSVC**: `/W4 /O2 /permissive- /utf-8`
+- **GCC / Clang**: `-Wall -Wextra -O3 -std=c++20`
+
+## Optional Vulkan
+`option(SHA256_ENABLE_VULKAN ...)`: when ON (default) and the Vulkan SDK is found, the GPU backend compiles in (`SHA256_HAVE_VULKAN=1`); otherwise the framework builds CPU-only with a stub engine that reports unavailability deterministically. CI covers both configurations.

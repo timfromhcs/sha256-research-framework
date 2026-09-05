@@ -17,5 +17,6 @@ Implemented in `tools/train.py`:
   - Message word Hamming weights
   - Statistical summary moments (mean, std, max, min)
 - **Loss**: Mean Squared Error (MSE) against empirical survivability scores.
-- **Results**:
-  - Test MSE: **15.2350** vs. Baseline linear heuristic MSE: **97.1035** (84.3% improvement).
+- **Status**: research prototype trained on **synthetic** trail features (`generate_synthetic_trail_features`), not on measured cryptanalysis campaigns. Recorded metrics on the synthetic split (`ml/models/metrics.json`):
+  - Test MSE: **15.2350** vs. Baseline linear heuristic MSE: **97.1035** (84.3% improvement on synthetic data).
+  - This does **not** demonstrate improvement on real differential search; controlled baseline-vs-guided comparisons on real workloads are future work.

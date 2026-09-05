@@ -45,3 +45,28 @@ jobs:
           if (-not (Test-Path "$binDir\sha-verifier.exe")) { throw "sha-verifier.exe missing" }
           if (-not (Test-Path "$binDir\sha_adversarial_tests.exe")) { throw "sha_adversarial_tests.exe missing" }
           Write-Host "All binaries verified in $binDir."
+
+  build-windows-cpuonly:
+    name: build-windows-cpuonly
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Setup MSVC environment
+        uses: ilammy/msvc-dev-cmd@a102174a2b586eec2ea151a69e6fd14404a8ce7c
+
+      - name: Configure CMake (CPU-only, no Vulkan SDK)
+        run: cmake -B build-cpuonly -DSHA256_ENABLE_VULKAN=OFF
+
+      - name: Build All Targets (Release, CPU-only)
+        run: cmake --build build-cpuonly --config Release --parallel 4
+
+      - name: Execute CPU-only Test Suite
+        shell: pwsh
+        run: |
+          $binDir = if (Test-Path build-cpuonly\Release) { "build-cpuonly\Release" } else { "build-cpuonly" }
+          & "$binDir\sha_tests.exe"
+          if ($LASTEXITCODE -ne 0) { throw "CPU-only tests failed" }
+          & "$binDir\sha_adversarial_tests.exe"
+          if ($LASTEXITCODE -ne 0) { throw "CPU-only adversarial tests failed" }

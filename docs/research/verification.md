@@ -5,7 +5,7 @@ The `IndependentVerifier` class is logically and physically separated from candi
 - The search engines and SAT solvers do not have permission to mark an experiment outcome as "Confirmed".
 - Every candidate is serialized to raw byte blocks and independently re-evaluated using the golden scalar reference implementation (`Sha256Scalar`).
 - Trivial cases (e.g. $M_A == M_B$) are explicitly caught and rejected.
-- Candidates with custom IVs or modified constants are automatically classified as `SemiFreeStartCollision` or `ModifiedIvCollision` rather than `StandardFullCollision`.
+- Candidates with custom IVs or modified constants are classified as `SemiFreeStartCollision` (the `ModifiedIvCollision` enum value is reserved for finer future distinction) rather than `StandardFullCollision`.
 
 ## Negative Test Integrity Gate
 The verifier includes a self-testing negative suite that validates rejection behavior against:

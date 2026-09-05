@@ -13,11 +13,15 @@ A pair of messages $(M_A, M_B)$ constitutes a Standard Full SHA-256 Collision if
 ## Reduced-Round Collision
 A pair of messages $(M_A, M_B)$ where $M_A \neq M_B$ and $\text{compress}(IV, M_A, R) == \text{compress}(IV, M_B, R)$ for $R < 64$ rounds with standard IV. **Must never be labelled as a full collision.**
 
+## Reduced-Round Preimage
+A single message block $M$ with $\text{compress}(IV, M, R) == D$ for a target output $D$ and $R < 64$ rounds. Recorded as `ReducedRoundPreimage` only after independent re-computation matches $D$. **Must never be labelled as a collision of any kind.**
+
 ## Semi-Free-Start Collision
 A pair of messages $(M_A, M_B)$ where $M_A \neq M_B$ and $\text{compress}(IV', M_A, R) == \text{compress}(IV', M_B, R)$ where the initial state $IV'$ is arbitrary or chosen by the adversary rather than the standard NIST IV.
 
 ## Near-Collision
 A pair of messages $(M_A, M_B)$ where $M_A \neq M_B$ and the Hamming distance between their digests $HD(\text{SHA256}(M_A), \text{SHA256}(M_B)) \le \epsilon$ for some small threshold $\epsilon \ll 256$.
+Framework note: the verifier's `NearCollision` label uses a triage threshold of 16 bits. This is a framework-defined heuristic for sorting near-misses, **not** a universally accepted cryptographic standard.
 
 ## Differential Trail / Characteristic
 A sequence of differences $(\Delta W_t, \Delta A_t, \Delta E_t)$ across rounds describing how input differences propagate through the step functions with a specific estimated probability.

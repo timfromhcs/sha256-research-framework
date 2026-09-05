@@ -10,6 +10,7 @@ namespace sha256_research {
 enum class CandidateClassification {
     Invalid,
     ReducedRoundCollision,
+    ReducedRoundPreimage,   // solver-reconstructed single-block preimage, independently re-verified
     SemiFreeStartCollision,
     ModifiedIvCollision,
     LocalCollision,

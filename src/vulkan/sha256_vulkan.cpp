@@ -87,13 +87,14 @@ bool Sha256VulkanEngine::initialize(const std::string& shader_dir) {
         return false;
     }
 
-    // 3. Load Shader Module
+    // 3. Load Shader Module (portable: no absolute local paths)
     std::string candidate_paths[] = {
         shader_dir + "/sha256.spv",
+        shader_dir + "/sha256.comp.spv",
         "shaders/sha256.spv",
+        "shaders/sha256.comp.spv",
         "../shaders/sha256.spv",
-        "../../shaders/sha256.spv",
-        "C:/Users/hcsme/Desktop/SHA256Solver/shaders/sha256.spv"
+        "../../shaders/sha256.spv"
     };
 
     VkShaderModule shader_module = VK_NULL_HANDLE;

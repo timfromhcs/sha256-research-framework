@@ -6,13 +6,13 @@ A reproducible, high-performance cryptographic research framework for Windows 11
 
 ## Key Capabilities
 
-- **FIPS 180-4 Standard Compliance**: Exact reference scalar implementation cross-checked against NIST CAVP test vectors.
-- **High-Throughput Multicore CPU Backend**: Unrolled round pipelines reaching **27.18 Million hashes/sec** across 16 logical threads on AMD Ryzen 7 7735HS.
-- **Vulkan GPU Compute Acceleration**: SPIR-V compute shaders dispatching batched 64-round compression on AMD Radeon 680M Graphics, independently verified against CPU state.
-- **Pluggable SAT/SMT Cryptanalysis**: Full Tseitin transformation for SHA-256 step function, modular addition carry tracking, and message schedule. Native integration with **CaDiCaL 3.0.1**, **Kissat 4.0.4**, **CryptoMiniSat 5.8.0**, and **Z3 4.16.0**.
-- **Non-Negotiable Independent Verifier**: Cryptographic results are strictly verified by an independent component before entering evidence storage. Enforces distinct inputs ($M_1 \neq M_2$) and exact FIPS padding.
-- **Immutable Evidence Storage & SQLite DB**: Every experiment receives an immutable ID, SHA-256 hashed artifact manifest, and entry in `evidence/knowledge_base.sqlite`.
-- **ML-Guided Search**: PyTorch neural ranking model for differential trail propagation and branch prioritization.
+- **FIPS 180-4 Standard Compliance**: Exact reference scalar implementation cross-checked against NIST CAVP test vectors (`sha-verifier test-vectors`, `sha_tests`).
+- **Multicore CPU Backend**: Portable unrolled compression path plus scalar reference fallback, validated for identical digests across padding-boundary lengths. CPUID feature detection (SSE4.2/AVX/AVX2/SHA-NI) is informational: this build contains no AVX2/SHA-NI intrinsics and requires no special instruction set to run. Example measured throughput (not a guarantee): ~27M hashes/sec across 16 threads on AMD Ryzen 7 7735HS — rerun `sha-research benchmark` on your machine for real numbers.
+- **Vulkan GPU Compute Acceleration (optional)**: SPIR-V compute shaders for batched compression, independently verified against CPU state when a compute device is present. CPU-only builds (`-DSHA256_ENABLE_VULKAN=OFF`) work without any Vulkan SDK.
+- **Pluggable SAT/SMT Cryptanalysis (optional, environment-dependent)**: Tseitin SAT encoding for reduced-round SHA-256 with native-vs-model differential oracle tests. External solvers (CaDiCaL, Kissat, CryptoMiniSat, MiniSat, Z3) are used only when installed; solver claims are always re-verified by the independent verifier.
+- **Non-Negotiable Independent Verifier**: Cryptographic results are strictly verified by an independent component before entering evidence storage. Enforces distinct inputs ($M_1 \neq M_2$) and exact FIPS padding. The 16-bit "NearCollision" label is a framework triage heuristic, not a cryptographic standard.
+- **Immutable Evidence Storage & SQLite DB**: Every experiment receives an immutable ID, SHA-256 hashed artifact manifest, and entry in `evidence/knowledge_base.sqlite`. Manifests record git commit, environment, solver version, command, seed, timing, and verification status; "executed" and "independently verified" are distinct states.
+- **ML-Guided Search (research prototype)**: PyTorch neural ranking prototype trained on synthetic trail features with a reported heuristic baseline (see `ml/models/metrics.json`). Not validated as an improvement on real cryptanalysis workloads; honest baseline comparison is recorded by `tools/train.py`.
 
 ---
 
@@ -84,7 +84,7 @@ Research & Experimentation:
 ├── include/sha256_research/    # C++ Public Headers
 │   ├── core/                   # Word rotations, bitwise functions, FIPS constants
 │   ├── sha256/                 # Scalar reference implementation with round tracing
-│   ├── cpu/                    # Unrolled AVX2/SSE4.2 multicore batching
+│   ├── cpu/                    # Portable unrolled batching + CPUID info (no intrinsics)
 │   ├── vulkan/                 # Vulkan context, SPIR-V pipeline, GPU compute
 │   ├── differential/           # Differential trails and bit condition modeling
 │   ├── sat/                    # Full Tseitin SAT CNF encoder

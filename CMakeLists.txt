@@ -5,29 +5,36 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Compiler flags
+# Compiler flags (portable: no mandatory AVX2; auto-vectorization only)
 if (MSVC)
-    add_compile_options(/W4 /O2 /permissive- /utf-8 /arch:AVX2)
+    add_compile_options(/W4 /O2 /permissive- /utf-8)
 else()
-    add_compile_options(-Wall -Wextra -O3 -mavx2)
+    add_compile_options(-Wall -Wextra -O3)
 endif()
 
 # Include directories
 include_directories(include)
 
-# Vulkan Support
-find_package(Vulkan REQUIRED)
-if (Vulkan_FOUND)
-    message(STATUS "Vulkan found: ${Vulkan_LIBRARIES}")
-    message(STATUS "Vulkan include: ${Vulkan_INCLUDE_DIRS}")
+# Vulkan Support (OPTIONAL capability; CPU-only builds must work without SDK)
+option(SHA256_ENABLE_VULKAN "Enable Vulkan GPU compute backend" ON)
+set(SHA256_HAVE_VULKAN 0)
+if (SHA256_ENABLE_VULKAN)
+    find_package(Vulkan QUIET)
+    if (Vulkan_FOUND)
+        set(SHA256_HAVE_VULKAN 1)
+        message(STATUS "Vulkan found: ${Vulkan_LIBRARIES}")
+        message(STATUS "Vulkan include: ${Vulkan_INCLUDE_DIRS}")
+    else()
+        message(STATUS "Vulkan SDK not found; building CPU-only (SHA256_HAVE_VULKAN=0).")
+    endif()
+else()
+    message(STATUS "Vulkan explicitly disabled; building CPU-only.")
 endif()
 
-# Core Library Sources
+# Core Library Sources (Vulkan sources only when available)
 set(CORE_SOURCES
     src/sha256/sha256_scalar.cpp
     src/cpu/sha256_optimized.cpp
-    src/vulkan/vulkan_context.cpp
-    src/vulkan/sha256_vulkan.cpp
     src/differential/diff_trail.cpp
     src/sat/sat_encoder.cpp
     src/solver/solver_interface.cpp
@@ -36,9 +43,24 @@ set(CORE_SOURCES
     src/benchmark/benchmark_suite.cpp
 )
 
+if (SHA256_HAVE_VULKAN)
+    list(APPEND CORE_SOURCES
+        src/vulkan/vulkan_context.cpp
+        src/vulkan/sha256_vulkan.cpp
+    )
+else()
+    list(APPEND CORE_SOURCES
+        src/vulkan/sha256_vulkan_stub.cpp
+    )
+endif()
+
 add_library(sha256_core STATIC ${CORE_SOURCES})
-target_include_directories(sha256_core PUBLIC include ${Vulkan_INCLUDE_DIRS})
-target_link_libraries(sha256_core PUBLIC Vulkan::Vulkan)
+target_include_directories(sha256_core PUBLIC include)
+target_compile_definitions(sha256_core PUBLIC SHA256_HAVE_VULKAN=${SHA256_HAVE_VULKAN})
+if (SHA256_HAVE_VULKAN)
+    target_include_directories(sha256_core PUBLIC ${Vulkan_INCLUDE_DIRS})
+    target_link_libraries(sha256_core PUBLIC Vulkan::Vulkan)
+endif()
 
 # Main CLI Executable
 add_executable(sha-research src/cli/main.cpp)
@@ -56,9 +78,9 @@ target_link_libraries(sha-verifier PRIVATE sha256_core)
 add_executable(sha_adversarial_tests tests/adversarial/test_tamper_detection.cpp)
 target_link_libraries(sha_adversarial_tests PRIVATE sha256_core)
 
-# Compile shaders if glslc is available
+# Compile shaders only when Vulkan + glslc are available
 find_program(GLSLC_EXECUTABLE NAMES glslc HINTS "${Vulkan_GLSLC_EXECUTABLE}" "$ENV{VULKAN_SDK}/bin")
-if (GLSLC_EXECUTABLE)
+if (GLSLC_EXECUTABLE AND SHA256_HAVE_VULKAN)
     message(STATUS "Found glslc: ${GLSLC_EXECUTABLE}")
     file(GLOB SHADER_SOURCES shaders/*.comp)
     foreach(SHADER ${SHADER_SOURCES})

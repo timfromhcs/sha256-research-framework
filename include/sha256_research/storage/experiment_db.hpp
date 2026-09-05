@@ -14,10 +14,13 @@ struct ExperimentMetadata {
     std::string hypothesis;
     std::string research_question;
     std::string parent_experiment;
-    std::string start_time;
-    std::string end_time;
-    std::string configuration_json;
+    std::string start_time;          // ISO-8601 UTC, set at run start
+    std::string end_time;            // ISO-8601 UTC, set at finalize
+    std::string configuration_json;  // input + experiment parameters
     std::string solver_name;
+    std::string solver_version;
+    std::string command_line;        // exact reproduction command
+    uint64_t deterministic_seed{0};  // recorded seed (0 = n/a)
     uint32_t target_rounds{0};
     bool outcome_success{false};
     std::string classification;

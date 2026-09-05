@@ -10,6 +10,7 @@ std::string to_string(CandidateClassification c) {
     switch (c) {
         case CandidateClassification::Invalid: return "Invalid";
         case CandidateClassification::ReducedRoundCollision: return "ReducedRoundCollision";
+        case CandidateClassification::ReducedRoundPreimage: return "ReducedRoundPreimage";
         case CandidateClassification::SemiFreeStartCollision: return "SemiFreeStartCollision";
         case CandidateClassification::ModifiedIvCollision: return "ModifiedIvCollision";
         case CandidateClassification::LocalCollision: return "LocalCollision";
@@ -24,7 +25,11 @@ std::string to_string(CandidateClassification c) {
 VerificationVerdict IndependentVerifier::verify_collision_candidate(const CollisionCandidate& candidate) {
     auto t0 = std::chrono::high_resolution_clock::now();
     VerificationVerdict verdict;
-    verdict.actual_rounds = candidate.claimed_rounds;
+    // Clamp: compression only supports 0..64 rounds; record effective rounds.
+    // NOTE: generator_metadata is never consulted: candidates cannot force
+    // a "verified" result through metadata alone (see adversarial tests).
+    const uint32_t eff_rounds = (candidate.claimed_rounds > 64U) ? 64U : candidate.claimed_rounds;
+    verdict.actual_rounds = eff_rounds;
 
     // Rule 1: A collision requires distinct inputs (message A != message B)
     if (candidate.message_a.empty() || candidate.message_b.empty()) {
@@ -42,7 +47,7 @@ VerificationVerdict IndependentVerifier::verify_collision_candidate(const Collis
     }
 
     // Compute independent hashes
-    if (candidate.claimed_rounds < 64 || candidate.custom_iv) {
+    if (eff_rounds < 64 || candidate.custom_iv) {
         // Reduced round or custom IV single-block compression evaluation
         if (candidate.message_a.size() != 64 || candidate.message_b.size() != 64) {
             verdict.is_valid = false;
@@ -53,8 +58,8 @@ VerificationVerdict IndependentVerifier::verify_collision_candidate(const Collis
 
         Sha256State state_a = candidate.iv;
         Sha256State state_b = candidate.iv;
-        Sha256Scalar::compress_block(state_a, candidate.message_a.data(), candidate.claimed_rounds);
-        Sha256Scalar::compress_block(state_b, candidate.message_b.data(), candidate.claimed_rounds);
+        Sha256Scalar::compress_block(state_a, candidate.message_a.data(), eff_rounds);
+        Sha256Scalar::compress_block(state_b, candidate.message_b.data(), eff_rounds);
 
         for (size_t i = 0; i < 8; ++i) {
             store_be32(verdict.digest_a.bytes.data() + i * 4, state_a[i]);
@@ -71,8 +76,10 @@ VerificationVerdict IndependentVerifier::verify_collision_candidate(const Collis
     if (verdict.digest_a != verdict.digest_b) {
         verdict.is_valid = false;
         if (verdict.hamming_distance <= 16) {
+            // Framework heuristic label only (NOT a cryptographic standard):
+            // digests within 16 bits are reported as NearCollision for triage.
             verdict.classification = CandidateClassification::NearCollision;
-            verdict.failure_reason = "Hashes differ by " + std::to_string(verdict.hamming_distance) + " bits (NearCollision)";
+            verdict.failure_reason = "Hashes differ by " + std::to_string(verdict.hamming_distance) + " bits (NearCollision; framework triage threshold 16 bits, not a standard)";
         } else {
             verdict.classification = CandidateClassification::Invalid;
             verdict.failure_reason = "Hashes do not match (Hamming distance = " + std::to_string(verdict.hamming_distance) + ")";
@@ -80,12 +87,12 @@ VerificationVerdict IndependentVerifier::verify_collision_candidate(const Collis
     } else {
         // Hashes match! Classify precisely
         verdict.is_valid = true;
-        if (candidate.claimed_rounds == 64 && !candidate.custom_iv && candidate.iv == SHA256_IV) {
+        if (eff_rounds == 64 && !candidate.custom_iv && candidate.iv == SHA256_IV) {
             // Full SHA-256 standard collision gate
             verdict.classification = CandidateClassification::StandardFullCollision;
         } else if (candidate.custom_iv || candidate.iv != SHA256_IV) {
             verdict.classification = CandidateClassification::SemiFreeStartCollision;
-        } else if (candidate.claimed_rounds < 64) {
+        } else if (eff_rounds < 64) {
             verdict.classification = CandidateClassification::ReducedRoundCollision;
         }
     }

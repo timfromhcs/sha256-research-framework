@@ -1,6 +1,8 @@
 # Vulkan Compute Architecture & GPU Profile
 
-## Vulkan Runtime Specification
+Reference-machine profile (example, not a requirement). Vulkan is an **optional** capability: CPU-only builds (`-DSHA256_ENABLE_VULKAN=OFF`) work without any SDK, and all GPU results are cross-checked against the CPU reference.
+
+## Example Vulkan Runtime (reference machine)
 - **API Version**: Vulkan 1.4.315 / SDK 1.4.357.0
 - **Device**: AMD Radeon(TM) Graphics (Device ID: `0x1681`, Vendor ID: `0x1002`)
 - **Driver**: AMD Proprietary Driver 2.0.353 (Shader Compiler 26.6.1)

@@ -13,4 +13,4 @@
 - **Storage**: Fast NVMe SSD storage on drive C:
 
 ## Multicore Performance
-The CPU backend utilizes hardware concurrency detection to partition batch hashing workloads evenly across all 16 execution threads. Measured all-core throughput reaches **27.18 Million hashes/sec** (over 1.4 GB/s of raw hashing throughput).
+The CPU backend utilizes hardware concurrency detection to partition batch hashing workloads evenly across all execution threads. Example measurement on this host (not a guarantee): **27.18 Million hashes/sec** across 16 threads (over 1.4 GB/s of raw hashing throughput). Rerun `sha-research benchmark` on your machine for real numbers; the committed `evidence/benchmarks/latest_benchmark.md` is regenerated from actual runs.
