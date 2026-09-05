@@ -1,0 +1,12 @@
+{
+  "total_experiments": 2,
+  "successful_verifications": 2,
+  "failed_verifications": 0,
+  "classifications": {
+    "ReducedRoundPreimageVerified": 2
+  },
+  "by_rounds": {
+    "8": 1,
+    "10": 1
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 20,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "windows-msvc-release",
+      "displayName": "Windows MSVC Release",
+      "description": "Native Windows build with MSVC Release optimization",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build/release",
+      "configuration": "Release"
+    },
+    {
+      "name": "windows-ninja-release",
+      "displayName": "Windows Ninja Release",
+      "description": "Fast Ninja build on Windows",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/ninja-release",
+      "configuration": "Release"
+    },
+    {
+      "name": "wsl-linux-release",
+      "displayName": "WSL2 Linux Release",
+      "description": "WSL2 Linux build with GCC/Clang",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/wsl-release",
+      "configuration": "Release"
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "windows-msvc-release",
+      "configurePreset": "windows-msvc-release",
+      "configuration": "Release"
+    },
+    {
+      "name": "windows-ninja-release",
+      "configurePreset": "windows-ninja-release",
+      "configuration": "Release"
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+# Build outputs
+build/
+bin/
+lib/
+out/
+x64/
+Debug/
+Release/
+
+# Visual Studio
+.vs/
+*.sln.docstates
+*.suo
+*.user
+*.vcxproj.user
+
+# Compiled shaders
+shaders/*.spv
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pt
+
+# Temp files
+*.tmp
+*.log
+evidence/experiments/*/artifacts/*.cnf
+evidence/experiments/*/artifacts/*.dimacs
