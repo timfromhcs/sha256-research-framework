@@ -31,16 +31,25 @@ jobs:
           }
 
       - name: Configure CMake
-        run: cmake -B build -G "Visual Studio 17 2022" -A x64
+        run: cmake -B build
 
       - name: Build Verifier & Adversarial Targets
         run: cmake --build build --config Release --target sha-verifier sha_adversarial_tests
 
       - name: Verify NIST Known-Answer Vectors
-        run: .\build\Release\sha-verifier.exe test-vectors
+        shell: pwsh
+        run: |
+          $binDir = if (Test-Path build\Release) { "build\Release" } else { "build" }
+          & "$binDir\sha-verifier.exe" test-vectors
 
       - name: Verify Hostile Negative Rejection Tests
-        run: .\build\Release\sha-verifier.exe test-negative
+        shell: pwsh
+        run: |
+          $binDir = if (Test-Path build\Release) { "build\Release" } else { "build" }
+          & "$binDir\sha-verifier.exe" test-negative
 
       - name: Run Adversarial Tamper Detection Suite
-        run: .\build\Release\sha_adversarial_tests.exe
+        shell: pwsh
+        run: |
+          $binDir = if (Test-Path build\Release) { "build\Release" } else { "build" }
+          & "$binDir\sha_adversarial_tests.exe"

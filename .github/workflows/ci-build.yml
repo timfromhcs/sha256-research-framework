@@ -30,8 +30,8 @@ jobs:
             echo "$($vks.FullName)\Bin" >> $env:GITHUB_PATH
           }
 
-      - name: Configure CMake (Visual Studio 2022 x64)
-        run: cmake -B build -G "Visual Studio 17 2022" -A x64
+      - name: Configure CMake
+        run: cmake -B build
 
       - name: Build All Targets (Release)
         run: cmake --build build --config Release --parallel 4
@@ -39,8 +39,9 @@ jobs:
       - name: Verify Binary Existence
         shell: pwsh
         run: |
-          if (-not (Test-Path build\Release\sha-research.exe)) { throw "sha-research.exe missing" }
-          if (-not (Test-Path build\Release\sha_tests.exe)) { throw "sha_tests.exe missing" }
-          if (-not (Test-Path build\Release\sha-verifier.exe)) { throw "sha-verifier.exe missing" }
-          if (-not (Test-Path build\Release\sha_adversarial_tests.exe)) { throw "sha_adversarial_tests.exe missing" }
-          Write-Host "All binaries built successfully."
+          $binDir = if (Test-Path build\Release) { "build\Release" } else { "build" }
+          if (-not (Test-Path "$binDir\sha-research.exe")) { throw "sha-research.exe missing" }
+          if (-not (Test-Path "$binDir\sha_tests.exe")) { throw "sha_tests.exe missing" }
+          if (-not (Test-Path "$binDir\sha-verifier.exe")) { throw "sha-verifier.exe missing" }
+          if (-not (Test-Path "$binDir\sha_adversarial_tests.exe")) { throw "sha_adversarial_tests.exe missing" }
+          Write-Host "All binaries verified in $binDir."

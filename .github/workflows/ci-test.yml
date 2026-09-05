@@ -31,10 +31,13 @@ jobs:
           }
 
       - name: Configure CMake
-        run: cmake -B build -G "Visual Studio 17 2022" -A x64
+        run: cmake -B build
 
       - name: Build Test Target
         run: cmake --build build --config Release --target sha_tests
 
       - name: Execute Full Test Suite
-        run: .\build\Release\sha_tests.exe
+        shell: pwsh
+        run: |
+          $binDir = if (Test-Path build\Release) { "build\Release" } else { "build" }
+          & "$binDir\sha_tests.exe"
