@@ -20,10 +20,15 @@ jobs:
       - name: Setup MSVC environment
         uses: ilammy/msvc-dev-cmd@a102174a2b586eec2ea151a69e6fd14404a8ce7c
 
-      - name: Setup Vulkan SDK
-        uses: humbletim/setup-vulkan-sdk@72eed4b9dbeac5de168f83da8e30b1d0f8ac7f14
-        with:
-          vulkan-query-version: 1.3.268.0
+      - name: Install Vulkan SDK
+        shell: pwsh
+        run: |
+          choco install vulkan-sdk -y --no-progress
+          $vks = Get-ChildItem -Path C:\VulkanSDK -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
+          if ($vks) {
+            echo "VULKAN_SDK=$($vks.FullName)" >> $env:GITHUB_ENV
+            echo "$($vks.FullName)\Bin" >> $env:GITHUB_PATH
+          }
 
       - name: Configure CMake (Visual Studio 2022 x64)
         run: cmake -B build -G "Visual Studio 17 2022" -A x64

@@ -17,12 +17,13 @@
       "version": "v1.13.0",
       "commit_sha": "a102174a2b586eec2ea151a69e6fd14404a8ce7c",
       "reason": "Configures MSVC environment variables on Windows GitHub Actions runner."
-    },
+    }
+  ],
+  "system_package_managers": [
     {
-      "action": "humbletim/setup-vulkan-sdk",
-      "version": "v1.2.0",
-      "commit_sha": "72eed4b9dbeac5de168f83da8e30b1d0f8ac7f14",
-      "reason": "Installs LunarG Vulkan SDK with glslc compiler in CI runner."
+      "manager": "chocolatey",
+      "package": "vulkan-sdk",
+      "reason": "Official Khronos Vulkan SDK installed on Windows CI runner without deprecated GitHub Actions."
     }
   ]
 }
