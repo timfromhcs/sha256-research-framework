@@ -1,0 +1,9 @@
+git -> C:\Program Files\Git\cmd\git.exe (git version 2.54.0.windows.1)
+cmake -> C:\Program Files\Python314\Scripts\cmake.exe (cmake version 4.4.0)
+ninja -> C:\Users\hcsme\AppData\Local\Microsoft\WinGet\Packages\Ninja-build.Ninja_Microsoft.Winget.Source_8wekyb3d8bbwe\ninja.exe (ninja 1.13.2)
+clang -> C:\Program Files\AMD\ROCm\7.1\bin\clang.exe (clang version 21.0.0git (git@github.com:Compute-Mirrors/llvm-project 5dcc622b51ecd499912c1062ce2b0ecda60d8e93))
+clang++ -> C:\Users\hcsme\bin\clang++.cmd (clang version 21.0.0git (git@github.com:Compute-Mirrors/llvm-project 5dcc622b51ecd499912c1062ce2b0ecda60d8e93))
+rustc -> C:\Users\hcsme\.cargo\bin\rustc.exe (rustc 1.96.0 (ac68faa20 2026-05-25))
+cargo -> C:\Users\hcsme\.cargo\bin\cargo.exe (cargo 1.96.0 (30a34c682 2026-05-25))
+python -> C:\Program Files\Python314\python.exe (Python 3.14.6)
+MSVC -> Found Visual Studio at C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools

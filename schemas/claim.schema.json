@@ -1,0 +1,41 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CryptographicClaim",
+  "type": "object",
+  "required": [
+    "claim_id",
+    "claim_type",
+    "rounds",
+    "source_commit",
+    "evidence_ids",
+    "verifier_status",
+    "timestamp"
+  ],
+  "properties": {
+    "claim_id": { "type": "string" },
+    "claim_type": {
+      "type": "string",
+      "enum": [
+        "STANDARD_FULL_SHA256_COLLISION",
+        "REDUCED_ROUND_COLLISION",
+        "SEMI_FREE_START_COLLISION",
+        "MODIFIED_IV_COLLISION",
+        "NEAR_COLLISION",
+        "DIFFERENTIAL_CHARACTERISTIC",
+        "SOLVER_MODEL_ONLY",
+        "KNOWN_ANSWER_TEST",
+        "NEGATIVE_TEST_VERIFIED"
+      ]
+    },
+    "rounds": { "type": "integer" },
+    "source_commit": { "type": "string" },
+    "evidence_ids": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "verifier_status": { "type": "string" },
+    "confidence": { "type": "number" },
+    "limitations": { "type": "string" },
+    "timestamp": { "type": "string" }
+  }
+}

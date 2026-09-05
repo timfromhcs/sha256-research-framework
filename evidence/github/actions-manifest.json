@@ -1,0 +1,28 @@
+{
+  "pinned_actions": [
+    {
+      "action": "actions/checkout",
+      "version": "v4.2.2",
+      "commit_sha": "11bd71901bbe5b1630ceea73d27597364c9af683",
+      "reason": "Official GitHub checkout action pinned to commit SHA for reproducibility and supply chain security."
+    },
+    {
+      "action": "actions/setup-python",
+      "version": "v5.4.0",
+      "commit_sha": "42375524e23c412d93fb67b49958b491fce71c38",
+      "reason": "Python environment setup for verification and telemetry analysis."
+    },
+    {
+      "action": "ilammy/msvc-dev-cmd",
+      "version": "v1.13.0",
+      "commit_sha": "0b4c99346443341e4b262132a007e44c6d0342c4",
+      "reason": "Configures MSVC environment variables on Windows GitHub Actions runner."
+    },
+    {
+      "action": "humbletim/setup-vulkan-sdk",
+      "version": "v1.2.0",
+      "commit_sha": "a50c82f9c3ff443ecae6f9e612f0ea6ddf03cce5",
+      "reason": "Installs LunarG Vulkan SDK with glslc compiler in CI runner."
+    }
+  ]
+}

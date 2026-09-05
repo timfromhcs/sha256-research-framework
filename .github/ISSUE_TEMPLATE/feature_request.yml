@@ -1,0 +1,18 @@
+name: Feature Request
+description: Propose a new research hypothesis, solver integration, or optimization
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Research Goal / Motivation
+      description: What cryptanalysis question or capability does this address?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Mathematical formulation or architectural changes proposed.
+    validations:
+      required: true

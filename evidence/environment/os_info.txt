@@ -1,0 +1,7 @@
+Caption: Microsoft Windows 11 Pro
+Version: 10.0.26200
+Build: 26200
+Architecture: 64-Bit
+PowerShell Version: 7.6.5
+Is Administrator: False
+Local Time: 2026-09-05 18:12:33 +02:00

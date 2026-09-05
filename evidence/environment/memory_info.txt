@@ -1,0 +1,4 @@
+TotalVisibleMemoryKB: 20748000
+FreePhysicalMemoryKB: 1988420
+TotalVisibleMemoryGB: 19.79
+FreePhysicalMemoryGB: 1.9

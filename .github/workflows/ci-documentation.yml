@@ -1,0 +1,52 @@
+name: Documentation & Reproducibility Check
+
+on:
+  push:
+    branches: [ main, "feature/**" ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  documentation-check:
+    name: documentation-check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Setup Python
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38
+        with:
+          python-version: "3.11"
+
+      - name: Verify Required Documentation Files
+        run: |
+          for f in README.md SECURITY.md CONTRIBUTING.md CHANGELOG.md LICENSE \
+                   docs/architecture/overview.md docs/architecture/build-system.md \
+                   docs/hardware/windows.md docs/hardware/vulkan.md \
+                   docs/solvers/overview.md docs/research/methodology.md \
+                   docs/research/terminology.md docs/research/verification.md \
+                   docs/reproducibility/reproduction.md docs/reproducibility/dependencies.md \
+                   docs/api/overview.md docs/experiments/overview.md docs/ml/overview.md \
+                   docs/development.md docs/troubleshooting.md docs/security/anti-cheating.md; do
+            if [ ! -f "$f" ]; then
+              echo "Missing required documentation file: $f"
+              exit 1
+            fi
+          done
+          echo "All required documentation files exist."
+
+      - name: Verify Reports Directory Integrity
+        run: |
+          for r in reports/final_build_report.md reports/final_test_report.md \
+                   reports/final_benchmark_report.md reports/dependency_report.md \
+                   reports/reproducibility_report.md reports/research_status.md; do
+            if [ ! -f "$r" ]; then
+              echo "Missing required report: $r"
+              exit 1
+            fi
+          done
+          echo "All reports verified."

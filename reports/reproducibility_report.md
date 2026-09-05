@@ -1,6 +1,6 @@
 # Reproducibility Report
 
-**Generated**: 2026-09-05 18:19:51
+**Generated**: 2026-09-05 18:22:03
 
 ## Reproduction Steps
 To reproduce the complete research framework on a clean machine:

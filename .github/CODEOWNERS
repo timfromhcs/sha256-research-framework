@@ -1,0 +1,18 @@
+# Security-critical paths requiring strict review by repository owner
+* @timfromhcs
+
+# Workflows and CI/CD
+/.github/workflows/ @timfromhcs
+/.github/CODEOWNERS @timfromhcs
+
+# Verifier and Integrity Gate
+/verifier/ @timfromhcs
+/src/verifier/ @timfromhcs
+/include/sha256_research/verifier/ @timfromhcs
+/tests/adversarial/ @timfromhcs
+
+# Evidence, Schemas, and Reproducibility
+/evidence/ @timfromhcs
+/schemas/ @timfromhcs
+/reproducibility/ @timfromhcs
+/SECURITY.md @timfromhcs

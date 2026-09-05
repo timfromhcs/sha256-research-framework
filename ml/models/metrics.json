@@ -1,0 +1,13 @@
+{
+  "dataset_size": 2000,
+  "train_size": 1400,
+  "val_size": 300,
+  "test_size": 300,
+  "best_val_loss": 18.343767166137695,
+  "test_mse": 15.234993934631348,
+  "test_mae": 3.108328104019165,
+  "baseline_heuristic_mse": 97.10346984863281,
+  "improvement_pct": 84.31055660690599,
+  "device": "cpu",
+  "pytorch_version": "2.12.1+cpu"
+}

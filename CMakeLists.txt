@@ -45,11 +45,16 @@ add_executable(sha-research src/cli/main.cpp)
 target_link_libraries(sha-research PRIVATE sha256_core)
 
 # Test Runner Executable
-file(GLOB_RECURSE TEST_SOURCES tests/*.cpp)
-if (TEST_SOURCES)
-    add_executable(sha_tests ${TEST_SOURCES})
-    target_link_libraries(sha_tests PRIVATE sha256_core)
-endif()
+add_executable(sha_tests tests/test_main.cpp)
+target_link_libraries(sha_tests PRIVATE sha256_core)
+
+# Standalone Verifier Executable
+add_executable(sha-verifier verifier/standalone/main.cpp)
+target_link_libraries(sha-verifier PRIVATE sha256_core)
+
+# Adversarial & Tamper Detection Tests
+add_executable(sha_adversarial_tests tests/adversarial/test_tamper_detection.cpp)
+target_link_libraries(sha_adversarial_tests PRIVATE sha256_core)
 
 # Compile shaders if glslc is available
 find_program(GLSLC_EXECUTABLE NAMES glslc HINTS "${Vulkan_GLSLC_EXECUTABLE}" "$ENV{VULKAN_SDK}/bin")

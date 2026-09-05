@@ -1,0 +1,6 @@
+Name: AMD Ryzen 7 7735HS with Radeon Graphics        
+NumberOfCores: 8
+NumberOfLogicalProcessors: 16
+MaxClockSpeedMHz: 3201
+Architecture: x86_64
+Supported Extensions: AVX, AVX2, SSE4.2, BMI1, BMI2, SHA-NI

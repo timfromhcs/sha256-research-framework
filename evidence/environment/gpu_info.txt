@@ -1,0 +1,7 @@
+Name: Parsec Virtual Display Adapter
+DriverVersion: 0.45.0.0
+AdapterRAM: 
+---
+Name: AMD Radeon(TM) Graphics
+DriverVersion: 32.0.21043.12001
+AdapterRAM: 4293918720
