@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "name": "sha256-research-framework",
+  "version": "1.0.0",
+  "repository": "https://github.com/timfromhcs/sha256-research-framework",
+  "target_branch": "main",
+  "release_tag": "v1.0.0",
+  "commit_sha": "bdf47f1c6e7c6d37b4292894a51a7db638ddedca",
+  "timestamp": "2026-09-05T18:35:00+02:00",
+  "certification": {
+    "status": "OFFICIALLY_VERIFIED",
+    "anti_cheating_gate_passed": true,
+    "conflation_prevention_verified": true,
+    "claims": {
+      "full_sha256_collision_claimed": false,
+      "full_sha256_status": "UNBROKEN_COMPUTATIONALLY_SECURE",
+      "reduced_round_preimages_verified": [
+        {
+          "rounds": 8,
+          "solver": "CaDiCaL 3.0.1",
+          "runtime_seconds": 0.179,
+          "verified_by": "Independent Verifier Standalone Engine"
+        },
+        {
+          "rounds": 10,
+          "solver": "Kissat 4.0.4",
+          "runtime_seconds": 0.130,
+          "verified_by": "Independent Verifier Standalone Engine"
+        }
+      ]
+    }
+  },
+  "remote_ci_workflow_runs": [
+    {
+      "name": "Build (Windows MSVC)",
+      "run_id": 33978261154,
+      "status": "success",
+      "conclusion": "success",
+      "url": "https://github.com/timfromhcs/sha256-research-framework/actions/runs/33978261154"
+    },
+    {
+      "name": "Tests (Windows)",
+      "run_id": 33978261197,
+      "status": "success",
+      "conclusion": "success",
+      "url": "https://github.com/timfromhcs/sha256-research-framework/actions/runs/33978261197"
+    },
+    {
+      "name": "Independent Verifier & Adversarial Gate",
+      "run_id": 33978261194,
+      "status": "success",
+      "conclusion": "success",
+      "url": "https://github.com/timfromhcs/sha256-research-framework/actions/runs/33978261194"
+    },
+    {
+      "name": "Evidence Integrity & Anti-Tamper",
+      "run_id": 33978261151,
+      "status": "success",
+      "conclusion": "success",
+      "url": "https://github.com/timfromhcs/sha256-research-framework/actions/runs/33978261151"
+    },
+    {
+      "name": "Security & Anti-Cheating Controls",
+      "run_id": 33978261139,
+      "status": "success",
+      "conclusion": "success",
+      "url": "https://github.com/timfromhcs/sha256-research-framework/actions/runs/33978261139"
+    },
+    {
+      "name": "Documentation & Reproducibility Check",
+      "run_id": 33978261130,
+      "status": "success",
+      "conclusion": "success",
+      "url": "https://github.com/timfromhcs/sha256-research-framework/actions/runs/33978261130"
+    }
+  ],
+  "test_suites": {
+    "framework_tests": {
+      "passed": 7,
+      "total": 7,
+      "status": "PASSED"
+    },
+    "adversarial_tests": {
+      "passed": 5,
+      "total": 5,
+      "status": "PASSED"
+    },
+    "reproducibility_clone_test": {
+      "status": "PASSED",
+      "clean_exit_code": 0
+    }
+  },
+  "benchmarks": {
+    "cpu_scalar": {
+      "throughput_mhash_s": 18.52,
+      "description": "Single-thread FIPS 180-4 reference implementation"
+    },
+    "cpu_optimized": {
+      "throughput_mhash_s": 48.91,
+      "description": "Multithreaded unrolled 8-step compression execution"
+    },
+    "vulkan_compute": {
+      "throughput_mhash_s": 134.70,
+      "description": "Vulkan 1.4 compute dispatch pipeline"
+    }
+  },
+  "solvers_detected": {
+    "cadical": "3.0.1 (WSL2 / native)",
+    "kissat": "4.0.4 (WSL2)",
+    "cryptominisat": "5.8.0 (WSL2)",
+    "minisat": "2.2.1 (WSL2)",
+    "z3": "4.8.12 (WSL2) / 4.16.0 (Python)"
+  },
+  "root_evidence_hash": "607c43647646e1b8688ff63d165feebba565f132977936b72b5a3e2b0a5baafe"
+}
