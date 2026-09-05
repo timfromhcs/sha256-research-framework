@@ -15,13 +15,13 @@
     {
       "action": "ilammy/msvc-dev-cmd",
       "version": "v1.13.0",
-      "commit_sha": "0b4c99346443341e4b262132a007e44c6d0342c4",
+      "commit_sha": "a102174a2b586eec2ea151a69e6fd14404a8ce7c",
       "reason": "Configures MSVC environment variables on Windows GitHub Actions runner."
     },
     {
       "action": "humbletim/setup-vulkan-sdk",
       "version": "v1.2.0",
-      "commit_sha": "a50c82f9c3ff443ecae6f9e612f0ea6ddf03cce5",
+      "commit_sha": "72eed4b9dbeac5de168f83da8e30b1d0f8ac7f14",
       "reason": "Installs LunarG Vulkan SDK with glslc compiler in CI runner."
     }
   ]
