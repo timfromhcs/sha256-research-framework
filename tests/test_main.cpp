@@ -516,6 +516,96 @@ void test_verifier_metadata_forgery() {
         throw std::runtime_error("non-collision misclassified as full collision");
 }
 
+void test_primitive_exhaustive() {
+    // Test rotr32 for a few values
+    assert(rotr32(0x12345678, 4) == 0x81234567);
+    // Test ch and maj with known values
+    assert(ch(0xFFFFFFFF, 0, 0xFFFFFFFF) == 0xFFFFFFFF);
+    assert(maj(0xFFFFFFFF, 0xFFFFFFFF, 0) == 0xFFFFFFFF);
+    // Test sigma0 and sigma1
+    assert(sigma0(0) == 0);
+    assert(sigma1(0) == 0);
+    // Test gamma0 and gamma1
+    assert(gamma0(0) == 0);
+    assert(gamma1(0) == 0);
+}
+
+void test_concurrency_hash_batch() {
+    // Test hash_batch with multiple threads and compare to scalar reference.
+    // We'll use a set of messages of the same length.
+
+    const size_t message_len = 64; // one block
+    const size_t count = 128; // number of messages
+
+    // Prepare input data: each message is a sequence of bytes (0..255) repeated.
+    std::vector<uint8_t> input(message_len * count);
+    for (size_t i = 0; i < input.size(); ++i) {
+        input[i] = static_cast<uint8_t>(i & 0xFF);
+    }
+
+    // Compute reference using scalar reference for each message.
+    std::vector<Sha256Digest> reference(count);
+    for (size_t i = 0; i < count; ++i) {
+        reference[i] = Sha256Scalar::hash(input.data() + i * message_len, message_len);
+    }
+
+    // Test with different thread counts: 0 (default), 1, 2, 4, 8, 16.
+    std::vector<unsigned int> thread_counts = {0, 1, 2, 4, 8, 16};
+    for (unsigned int threads : thread_counts) {
+        std::vector<Sha256Digest> output(count);
+        Sha256Optimized::hash_batch(input.data(), message_len, count, output.data(), threads);
+
+        // Compare each output to the reference.
+        for (size_t i = 0; i < count; ++i) {
+            if (output[i] != reference[i]) {
+                throw std::runtime_error("hash_batch mismatch with " + std::to_string(threads) +
+                                         " threads at message index " + std::to_string(i));
+            }
+        }
+    }
+}
+
+void test_concurrency_search() {
+    // Test search_prefix_zeros with multiple threads and a trivial target (zero bits).
+    // We set max_iterations low enough so that the search is deterministic (nonce 0 will be found).
+
+    // Target: zero bits = 0 -> every hash matches, so nonce 0 should be found.
+    Sha256Optimized::SearchTarget target;
+    target.target_zero_bits = 0;
+    target.max_iterations = 100; // small enough to be quick and deterministic.
+
+    // Use a fixed prefix (4 bytes).
+    uint8_t prefix[4] = {0x01, 0x02, 0x03, 0x04};
+
+    // Test with different thread counts.
+    std::vector<unsigned int> thread_counts = {0, 1, 2, 4, 8, 16};
+    for (unsigned int threads : thread_counts) {
+        auto result = Sha256Optimized::search_prefix_zeros(prefix, 4, target, threads);
+
+        // We expect to find a nonce (since target_zero_bits=0).
+        if (!result.found) {
+            throw std::runtime_error("search_prefix_zeros did not find a nonce with " +
+                                     std::to_string(threads) + " threads");
+        }
+
+        // The nonce should be within the max_iterations.
+        if (result.nonce >= target.max_iterations) {
+            throw std::runtime_error("search_prefix_zeros returned nonce out of range with " +
+                                     std::to_string(threads) + " threads");
+        }
+
+        // Verify the digest independently.
+        std::vector<uint8_t> buf(4 + 8);
+        std::memcpy(buf.data(), prefix, 4);
+        store_be64(buf.data() + 4, result.nonce);
+        Sha256Digest computed = Sha256Scalar::hash(buf.data(), buf.size());
+        if (computed != result.digest) {
+            throw std::runtime_error("search_prefix_zeros digest mismatch with " +
+                                     std::to_string(threads) + " threads");
+        }
+    }
+}
+
 void test_vulkan_smoke() {
     Sha256VulkanEngine vk;
     if (vk.initialize("shaders")) {
@@ -547,6 +637,9 @@ int main() {
     RUN_TEST(test_sat_end_to_end_with_solver);
     RUN_TEST(test_independent_verifier_rejection_gate);
     RUN_TEST(test_verifier_metadata_forgery);
+    RUN_TEST(test_primitive_exhaustive);
+    RUN_TEST(test_concurrency_hash_batch);
+    RUN_TEST(test_concurrency_search);
     RUN_TEST(test_vulkan_smoke);
 
     std::cout << "===============================================================\n"
