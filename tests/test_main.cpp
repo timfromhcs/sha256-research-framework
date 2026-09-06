@@ -520,7 +520,7 @@ void test_primitive_exhaustive() {
     // Test rotr32 for a few values
     assert(rotr32(0x12345678, 4) == 0x81234567);
     // Test ch and maj with known values
-    assert(ch(0xFFFFFFFF, 0, 0xFFFFFFFF) == 0xFFFFFFFF);
+    assert(ch(0xFFFFFFFF, 0, 0xFFFFFFFF) == 0);
     assert(maj(0xFFFFFFFF, 0xFFFFFFFF, 0) == 0xFFFFFFFF);
     // Test sigma0 and sigma1
     assert(sigma0(0) == 0);
