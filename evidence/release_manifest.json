@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft-07/schema#",
   "name": "sha256-research-framework",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "repository": "https://github.com/timfromhcs/sha256-research-framework",
   "target_branch": "main",
-  "release_tag": "v1.0.0",
-  "commit_sha": "bdf47f1c6e7c6d37b4292894a51a7db638ddedca",
-  "timestamp": "2026-09-05T18:35:00+02:00",
+  "release_tag": "v2.0.0",
+  "commit_sha": "3c4ac1066df4b6ce679bb0df537947678b3caba4",
+  "timestamp": "2026-09-11T20:30:00+02:00",
   "certification": {
     "status": "OFFICIALLY_VERIFIED",
     "anti_cheating_gate_passed": true,
@@ -14,6 +14,7 @@
     "claims": {
       "full_sha256_collision_claimed": false,
       "full_sha256_status": "UNBROKEN_COMPUTATIONALLY_SECURE",
+      "scientific_integrity_statement": "No standard full SHA-256 collision demonstrated.",
       "reduced_round_preimages_verified": [
         {
           "rounds": 8,
@@ -33,75 +34,88 @@
   "remote_ci_workflow_runs": [
     {
       "name": "Build (Windows MSVC)",
-      "run_id": 33978261154,
+      "run_id": 34632572911,
       "status": "success",
       "conclusion": "success",
-      "url": "https://github.com/timfromhcs/sha256-research-framework/actions/runs/33978261154"
+      "url": "https://github.com/timfromhcs/sha256-research-framework/actions/runs/34632572911"
     },
     {
       "name": "Tests (Windows)",
-      "run_id": 33978261197,
+      "run_id": 34632572780,
       "status": "success",
       "conclusion": "success",
-      "url": "https://github.com/timfromhcs/sha256-research-framework/actions/runs/33978261197"
+      "url": "https://github.com/timfromhcs/sha256-research-framework/actions/runs/34632572780"
     },
     {
       "name": "Independent Verifier & Adversarial Gate",
-      "run_id": 33978261194,
+      "run_id": 34632572885,
       "status": "success",
       "conclusion": "success",
-      "url": "https://github.com/timfromhcs/sha256-research-framework/actions/runs/33978261194"
+      "url": "https://github.com/timfromhcs/sha256-research-framework/actions/runs/34632572885"
     },
     {
       "name": "Evidence Integrity & Anti-Tamper",
-      "run_id": 33978261151,
+      "run_id": 34632572831,
       "status": "success",
       "conclusion": "success",
-      "url": "https://github.com/timfromhcs/sha256-research-framework/actions/runs/33978261151"
+      "url": "https://github.com/timfromhcs/sha256-research-framework/actions/runs/34632572831"
     },
     {
       "name": "Security & Anti-Cheating Controls",
-      "run_id": 33978261139,
+      "run_id": 34632572741,
       "status": "success",
       "conclusion": "success",
-      "url": "https://github.com/timfromhcs/sha256-research-framework/actions/runs/33978261139"
+      "url": "https://github.com/timfromhcs/sha256-research-framework/actions/runs/34632572741"
     },
     {
       "name": "Documentation & Reproducibility Check",
-      "run_id": 33978261130,
+      "run_id": 34632572796,
       "status": "success",
       "conclusion": "success",
-      "url": "https://github.com/timfromhcs/sha256-research-framework/actions/runs/33978261130"
+      "url": "https://github.com/timfromhcs/sha256-research-framework/actions/runs/34632572796"
     }
   ],
   "test_suites": {
     "framework_tests": {
-      "passed": 7,
-      "total": 7,
+      "passed": 21,
+      "total": 21,
       "status": "PASSED"
     },
     "adversarial_tests": {
-      "passed": 5,
-      "total": 5,
+      "passed": 8,
+      "total": 8,
       "status": "PASSED"
     },
-    "reproducibility_clone_test": {
+    "ctest_suite": {
+      "targets_passed": 5,
+      "targets_total": 5,
+      "status": "PASSED"
+    },
+    "reproducibility_evidence_test": {
       "status": "PASSED",
       "clean_exit_code": 0
     }
   },
   "benchmarks": {
     "cpu_scalar": {
-      "throughput_mhash_s": 18.52,
+      "throughput_mhash_s": 1.84,
       "description": "Single-thread FIPS 180-4 reference implementation"
     },
-    "cpu_optimized": {
-      "throughput_mhash_s": 48.91,
-      "description": "Multithreaded unrolled 8-step compression execution"
+    "cpu_optimized_1t": {
+      "throughput_mhash_s": 3.43,
+      "description": "Single-thread unrolled round loops"
+    },
+    "cpu_optimized_16t": {
+      "throughput_mhash_s": 27.18,
+      "description": "Multithreaded unrolled compression execution (16 threads)"
     },
     "vulkan_compute": {
-      "throughput_mhash_s": 134.70,
-      "description": "Vulkan 1.4 compute dispatch pipeline"
+      "throughput_mhash_s": 0.72,
+      "description": "Vulkan 1.4 compute dispatch pipeline (AMD Radeon 680M)"
+    },
+    "sat_cnf_encoding": {
+      "rate_problems_s": 79.0,
+      "description": "Tseitin round transform for 16-round SHA-256"
     }
   },
   "solvers_detected": {

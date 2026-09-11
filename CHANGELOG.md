@@ -2,6 +2,21 @@
 
 All notable changes to the SHA-256 Research Framework will be documented in this file.
 
+## [2.0.0] - 2026-09-11
+
+### Added
+- **Segregated Independent Reference Engine**: Fully decoupled FIPS 180-4 hashing engine in `IndependentVerifier` with separate constants, IVs, round compression, and padding to completely eliminate common-mode failure between research and verification paths.
+- **Strict Input Validation & Anti-Clamping**: Security-sensitive inputs with invalid round counts (`rounds < 1 || rounds > 64`) are explicitly rejected with fatal exit codes instead of silently clamped.
+- **Hardened Adversarial Test Suite**: Expanded to 8 comprehensive test vectors covering 1-bit tampered candidates, identical inputs ($M_1 == M_2$), corrupted artifacts, modified IV claims, reduced rounds claimed as 64-round, zero-round configurations, over-claimed rounds, and forged metadata authority rejection.
+- **Dedicated NIST Million 'a' Target**: Added standalone `test_million_a` executable and CTest target validating OpenSSL-identical digests on long 1MB boundary inputs.
+- **Padding Boundary Verification Sweep**: Comprehensive differential sweep covering 0 to 130 byte messages, explicitly checking critical single/multi-block transitions (55, 56, 64, 65, 119, 120, 128 bytes).
+- **CI Failure Propagation Hardening**: Added `$LASTEXITCODE` checks across all workflow execution steps in GitHub Actions.
+
+### Changed
+- Refactored `test_primitive_exhaustive` from `assert()` macros to exception-throwing validations for build resilience under `/DNDEBUG`.
+- Fixed GLSL compute shader edge case in `search.comp` avoiding undefined 32-bit shift behavior when `target_zero_bits == 0`.
+- Integrated all test suites into unified CTest suite with 100% pass rate.
+
 ## [1.0.0] - 2026-09-05
 
 ### Added
