@@ -23,4 +23,7 @@ jobs:
           python-version: "3.11"
 
       - name: Run Evidence Manifest & Artifact Verification
-        run: python reproducibility/verify_evidence.py
+        run: |
+          python reproducibility/verify_evidence.py
+          python reproducibility/test_determinism.py
+          python tools/generate_release_manifest.py --verify

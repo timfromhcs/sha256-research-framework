@@ -31,10 +31,11 @@ A reproducible, high-performance cryptographic research framework for Windows 11
 2. **Explicit Anti-Clamping Policy**:
    - Replaced silent input clamping (`std::min(rounds, 64)`) with strict, explicit validation in both CLI options and SAT encoders.
    - Any request with `rounds < 1` or `rounds > 64` throws an explicit invalid argument exception.
-3. **Comprehensive Layered Test Suite (5 CTest Targets, 100% Pass Rate)**:
+3. **Comprehensive Layered Test Suite (6 CTest Targets, 100% Pass Rate)**:
    - **`sha-tests` (21 tests)**: Exhaustive primitives, padding boundary sweep (0..130 bytes, 55, 56, 64, 65, 119, 120, 128 bytes), streaming chunked hashing, backend equivalence, exact search partitioning, Tseitin SAT semantics, solver replay, and verifier differential cross-checks.
    - **`sha-adversarial-tests` (8 tests)**: 1-bit tampering detection, identical input spoofing rejection, artifact hash tampering, custom-IV misclassification prevention, reduced-round conflation rejection, zero-round rejection, over-claimed rounds rejection, and forged metadata override rejection.
-   - **`test-million-a`**: NIST CAVP long message test (1,000,000 `'a'` characters) verifying both scalar and optimized CPU backends against `cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0`.
+   - **`test-million-a`**: NIST CAVP long message test (1,000,000 `'a'` characters) verifying both scalar, optimized, and independent verifier backends against `cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0`.
+   - **`test-determinism`**: Dedicated determinism test verifying bit-for-bit output invariance across repeated runs (runs A, B, C) across all engines, parallel batch hashing, SAT encodings, and differential trails.
    - **`verifier-kat`**: NIST Known-Answer Test suite executed via standalone `sha-verifier.exe`.
    - **`verifier-negative`**: Negative guardrail and hostile rejection test suite.
 4. **Hardened Shaders & Pipelines**:
@@ -52,6 +53,7 @@ A reproducible, high-performance cryptographic research framework for Windows 11
 | `sha-tests` | 21 Unit Tests | Primitives, padding sweep, differential, Tseitin SAT, solver replay | **PASS** |
 | `sha-adversarial-tests` | 8 Adversarial Tests | Hostile tamper detection, fake claims, metadata forgery guardrails | **PASS** |
 | `test-million-a` | 1 NIST KAT | NIST 1,000,000 `'a'` character vector verification | **PASS** |
+| `test-determinism` | 8 Invariance Tests | Multi-run (A/B/C) determinism for CPU, threads, SAT, verifier | **PASS** |
 | `verifier-kat` | 4 Vectors | Standalone independent FIPS 180-4 reference engine KATs | **PASS** |
 | `verifier-negative` | 3 Hostile Vectors | Negative rejection gates for $M_1 = M_2$, altered digests, custom IVs | **PASS** |
 | `verify_evidence.py` | Full Evidence DB | SHA-256 hash manifest verification across all experiment artifacts | **PASS** |

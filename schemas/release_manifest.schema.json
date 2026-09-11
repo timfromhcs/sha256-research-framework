@@ -1,0 +1,93 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ReleaseManifest",
+  "description": "Formal schema for release_manifest.json establishing deterministic metadata and commit semantics",
+  "type": "object",
+  "required": [
+    "manifest_schema_version",
+    "name",
+    "version",
+    "repository",
+    "target_branch",
+    "release_tag",
+    "source_commit_sha",
+    "timestamp",
+    "certification",
+    "test_suites",
+    "root_evidence_hash"
+  ],
+  "properties": {
+    "$schema": { "type": "string" },
+    "manifest_schema_version": { "type": "string" },
+    "name": { "type": "string" },
+    "version": { "type": "string" },
+    "repository": { "type": "string" },
+    "target_branch": { "type": "string" },
+    "release_tag": { "type": "string" },
+    "source_commit_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{40}$",
+      "description": "Authoritative Git commit SHA of the verified source tree from which all release tests, benchmarks, and artifacts were generated prior to release packaging."
+    },
+    "commit_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{40}$",
+      "description": "Backward-compatible alias for source_commit_sha."
+    },
+    "release_commit_sha": {
+      "type": ["string", "null"],
+      "description": "Git commit SHA of the final release commit if generated post-commit, or null within in-repo tracking to eliminate self-referential hash dependency."
+    },
+    "release_commit_semantics": {
+      "type": "string",
+      "description": "Canonical explanation of the non-self-referential commit relationship."
+    },
+    "timestamp": { "type": "string" },
+    "certification": {
+      "type": "object",
+      "required": [
+        "status",
+        "anti_cheating_gate_passed",
+        "conflation_prevention_verified",
+        "claims"
+      ],
+      "properties": {
+        "status": { "type": "string" },
+        "anti_cheating_gate_passed": { "type": "boolean" },
+        "conflation_prevention_verified": { "type": "boolean" },
+        "claims": { "type": "object" }
+      }
+    },
+    "remote_ci_workflow_runs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "run_id", "status", "conclusion", "url"],
+        "properties": {
+          "name": { "type": "string" },
+          "run_id": { "type": "integer" },
+          "status": { "type": "string" },
+          "conclusion": { "type": "string" },
+          "url": { "type": "string" }
+        }
+      }
+    },
+    "test_suites": {
+      "type": "object",
+      "required": ["framework_tests", "adversarial_tests", "ctest_suite"],
+      "properties": {
+        "framework_tests": { "type": "object" },
+        "adversarial_tests": { "type": "object" },
+        "ctest_suite": { "type": "object" },
+        "reproducibility_evidence_test": { "type": "object" }
+      }
+    },
+    "benchmarks": { "type": "object" },
+    "solvers_detected": { "type": "object" },
+    "root_evidence_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{64}$",
+      "description": "Deterministic SHA-256 Merkle root hash of all canonical experiment manifests."
+    }
+  }
+}

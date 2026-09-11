@@ -26,6 +26,7 @@ jobs:
         run: |
           for f in README.md SECURITY.md CONTRIBUTING.md CHANGELOG.md LICENSE \
                    docs/architecture/overview.md docs/architecture/build-system.md \
+                   docs/architecture/release-manifest-semantics.md \
                    docs/hardware/windows.md docs/hardware/vulkan.md \
                    docs/solvers/overview.md docs/research/methodology.md \
                    docs/research/terminology.md docs/research/verification.md \

@@ -40,4 +40,4 @@ jobs:
 
       - name: Verify JSON Schemas
         run: |
-          python -c "import json; json.load(open('schemas/manifest.schema.json')); json.load(open('schemas/claim.schema.json')); print('Schemas valid.')"
+          python -c "import json; json.load(open('schemas/manifest.schema.json')); json.load(open('schemas/claim.schema.json')); json.load(open('schemas/release_manifest.schema.json')); print('Schemas valid.')"

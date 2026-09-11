@@ -459,10 +459,9 @@ void test_sat_end_to_end_with_solver() {
     bool avail = solver->is_available();
     if (!avail) {
         // Try any available solver before skipping.
-        bool any = false;
-        for (auto t : SolverFactory::get_available_solvers()) { (void)t; any = true; break; }
-        if (!any) { std::cout << "[no SAT solver installed, skipping] "; return; }
-        solver = SolverFactory::create(SolverFactory::get_available_solvers().front());
+        auto available = SolverFactory::get_available_solvers();
+        if (available.empty()) { std::cout << "[no SAT solver installed, skipping] "; return; }
+        solver = SolverFactory::create(available.front());
     }
     uint8_t block[64] = {0};
     for (int i = 0; i < 64; ++i) block[i] = static_cast<uint8_t>((i * 3 + 7) & 0xFF);
@@ -512,15 +511,14 @@ void test_verifier_metadata_forgery() {
     auto v = IndependentVerifier::verify_collision_candidate(cand);
     if (v.is_valid || v.classification == CandidateClassification::StandardFullCollision)
         throw std::runtime_error("metadata forgery accepted");
-    // Over-claimed rounds (>64) clamp to 64 and must not misclassify.
+    // Over-claimed rounds (>64) must be rejected explicitly (anti-clamping policy).
     CollisionCandidate cand2;
     cand2.message_a = {'x'};
     cand2.message_b = {'y'};
     cand2.claimed_rounds = 1000;
     auto v2 = IndependentVerifier::verify_collision_candidate(cand2);
-    if (v2.actual_rounds != 64) throw std::runtime_error("rounds not clamped");
-    if (v2.classification == CandidateClassification::StandardFullCollision)
-        throw std::runtime_error("non-collision misclassified as full collision");
+    if (v2.is_valid || v2.classification != CandidateClassification::Invalid)
+        throw std::runtime_error("over-claimed rounds not rejected as invalid");
 }
 
 void test_primitive_exhaustive() {

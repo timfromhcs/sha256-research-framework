@@ -14,7 +14,7 @@ def analyze_experiments(evidence_dir="evidence/experiments"):
     print("           SHA-256 Research Telemetry & Analysis               ")
     print("===============================================================")
 
-    manifests = glob.glob(f"{evidence_dir}/**/manifest.json", recursive=True)
+    manifests = sorted(glob.glob(f"{evidence_dir}/**/manifest.json", recursive=True))
     print(f"Found {len(manifests)} experiment runs in {evidence_dir}.")
 
     stats = {

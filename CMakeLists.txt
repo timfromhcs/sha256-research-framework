@@ -30,7 +30,7 @@ if (SHA256_ENABLE_VULKAN)
         message(STATUS "Vulkan found: ${Vulkan_LIBRARIES}")
         message(STATUS "Vulkan include: ${Vulkan_INCLUDE_DIRS}")
     else()
-        message(STATUS "Vulkan SDK not found; building CPU-only (SHA256_HAVE_VULKAN=0).")
+        message(FATAL_ERROR "Vulkan enabled (SHA256_ENABLE_VULKAN=ON) but Vulkan SDK was not found. To build without Vulkan, specify -DSHA256_ENABLE_VULKAN=OFF.")
     endif()
 else()
     message(STATUS "Vulkan explicitly disabled; building CPU-only.")
@@ -83,6 +83,10 @@ target_link_libraries(sha-verifier PRIVATE sha256_core)
 add_executable(test_million_a tests/test_million_a.cpp)
 target_link_libraries(test_million_a PRIVATE sha256_core)
 
+# Dedicated Determinism & Reproducibility test executable
+add_executable(test_determinism tests/test_determinism.cpp)
+target_link_libraries(test_determinism PRIVATE sha256_core)
+
 # Adversarial & Tamper Detection Tests
 add_executable(sha_adversarial_tests tests/adversarial/test_tamper_detection.cpp)
 target_link_libraries(sha_adversarial_tests PRIVATE sha256_core)
@@ -91,6 +95,7 @@ target_link_libraries(sha_adversarial_tests PRIVATE sha256_core)
 add_test(NAME sha-tests COMMAND $<TARGET_FILE:sha_tests>)
 add_test(NAME sha-adversarial-tests COMMAND $<TARGET_FILE:sha_adversarial_tests>)
 add_test(NAME test-million-a COMMAND $<TARGET_FILE:test_million_a>)
+add_test(NAME test-determinism COMMAND $<TARGET_FILE:test_determinism>)
 add_test(NAME verifier-kat COMMAND $<TARGET_FILE:sha-verifier> test-vectors)
 add_test(NAME verifier-negative COMMAND $<TARGET_FILE:sha-verifier> test-negative)
 
@@ -100,13 +105,13 @@ if (GLSLC_EXECUTABLE AND SHA256_HAVE_VULKAN)
     message(STATUS "Found glslc: ${GLSLC_EXECUTABLE}")
     file(GLOB SHADER_SOURCES shaders/*.comp)
     foreach(SHADER ${SHADER_SOURCES})
-        get_filename_component(SHADER_NAME ${SHADER} NAME)
-        set(SPIRV_OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/shaders/${SHADER_NAME}.spv")
+        get_filename_component(SHADER_NAME_WE ${SHADER} NAME_WE)
+        set(SPIRV_OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/shaders/${SHADER_NAME_WE}.spv")
         add_custom_command(
             OUTPUT ${SPIRV_OUTPUT}
             COMMAND ${GLSLC_EXECUTABLE} ${SHADER} -o ${SPIRV_OUTPUT}
             DEPENDS ${SHADER}
-            COMMENT "Compiling SPIR-V shader: ${SHADER_NAME}"
+            COMMENT "Compiling SPIR-V shader: ${SHADER_NAME_WE}.spv"
         )
         list(APPEND SPIRV_SHADERS ${SPIRV_OUTPUT})
     endforeach()

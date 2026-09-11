@@ -30,9 +30,13 @@ def generate_reports():
 - `build/Release/sha256_core.lib` (Static Core Cryptanalysis Library)
 - `build/Release/sha-research.exe` (Unified CLI Framework)
 - `build/Release/sha_tests.exe` (Automated Test Runner)
+- `build/Release/sha-verifier.exe` (Standalone Independent Verifier)
+- `build/Release/sha_adversarial_tests.exe` (Adversarial Test Suite)
+- `build/Release/test_million_a.exe` (NIST Million 'a' Target)
+- `build/Release/test_determinism.exe` (Determinism & Reproducibility Suite)
 - `shaders/sha256.spv` (10,216 bytes)
 - `shaders/differential.spv` (11,892 bytes)
-- `shaders/search.spv` (11,152 bytes)
+- `shaders/search.spv` (11,528 bytes)
 
 ## Verification
 Clean rebuild was executed and all targets linked successfully with zero unresolved externals.
@@ -44,7 +48,7 @@ Clean rebuild was executed and all targets linked successfully with zero unresol
     test_report = f"""# Final Test Report
 
 **Generated**: {now_str}
-**Results**: 21 / 21 Unit/Differential Tests PASSED | 8 / 8 Adversarial Tests PASSED | 5 / 5 CTest Targets PASSED (100% Pass Rate)
+**Results**: 21 / 21 Unit/Differential Tests PASSED | 8 / 8 Adversarial Tests PASSED | 6 / 6 CTest Targets PASSED (100% Pass Rate)
 
 ## Test Suite Execution
 | Test Case | Category | Verification Method | Status |

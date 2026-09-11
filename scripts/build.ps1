@@ -3,7 +3,8 @@
 param(
     [string]$Configuration = "Release",
     [switch]$Clean = $false,
-    [switch]$RunTests = $false
+    [switch]$RunTests = $false,
+    [string]$Generator = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -20,18 +21,29 @@ if ($Clean -and (Test-Path $buildDir)) {
 }
 
 if (-not (Test-Path $buildDir)) {
-    Write-Host "Configuring CMake (Visual Studio 2022 x64)..." -ForegroundColor Yellow
-    & cmake -B $buildDir -G "Visual Studio 17 2022" -A x64
-    if ($LASTEXITCODE -ne 0) { throw "CMake configuration failed." }
+    Write-Host "Configuring CMake..." -ForegroundColor Yellow
+    if ($Generator -ne "") {
+        & cmake -B $buildDir -G $Generator
+    } else {
+        & cmake -B $buildDir
+    }
+    if ($LASTEXITCODE -ne 0) { throw "CMake configuration failed with exit code $LASTEXITCODE." }
 }
 
 Write-Host "Building target ($Configuration)..." -ForegroundColor Yellow
 & cmake --build $buildDir --config $Configuration --parallel 8
-if ($LASTEXITCODE -ne 0) { throw "Build failed." }
+if ($LASTEXITCODE -ne 0) { throw "Build failed with exit code $LASTEXITCODE." }
 
 Write-Host "Build succeeded!" -ForegroundColor Green
 
 if ($RunTests) {
     Write-Host "Executing test suite..." -ForegroundColor Yellow
-    & "$buildDir\$Configuration\sha_tests.exe"
+    $testExe = "$buildDir\$Configuration\sha_tests.exe"
+    if (-not (Test-Path $testExe)) {
+        $testExe = "$buildDir\sha_tests.exe"
+    }
+    & $testExe
+    if ($LASTEXITCODE -ne 0) {
+        throw "Test suite execution failed with exit code $LASTEXITCODE"
+    }
 }

@@ -34,7 +34,7 @@ jobs:
         run: cmake -B build
 
       - name: Build Test Targets
-        run: cmake --build build --config Release --target sha_tests test_million_a
+        run: cmake --build build --config Release --target sha_tests test_million_a test_determinism
 
       - name: Execute Full Test Suite
         shell: pwsh
@@ -44,3 +44,5 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "sha_tests failed with exit code $LASTEXITCODE" }
           & "$binDir\test_million_a.exe"
           if ($LASTEXITCODE -ne 0) { throw "test_million_a failed with exit code $LASTEXITCODE" }
+          & "$binDir\test_determinism.exe"
+          if ($LASTEXITCODE -ne 0) { throw "test_determinism failed with exit code $LASTEXITCODE" }

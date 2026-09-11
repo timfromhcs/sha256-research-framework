@@ -21,7 +21,7 @@ using namespace sha256_research;
 
 void print_banner() {
     std::cout << "===============================================================\n"
-              << "   SHA-256 Cryptanalysis & Research Framework (v2026.1)       \n"
+              << "   SHA-256 Cryptanalysis & Research Framework (v2.0.0)        \n"
               << "   Target: Windows 11 / Vulkan Compute / Multicore CPU / WSL  \n"
               << "===============================================================\n";
 }
@@ -294,7 +294,7 @@ int cmd_experiment_run(int rounds, const std::string& solver_str) {
 
         // Verify with IndependentVerifier
         Sha256State test_state = SHA256_IV;
-        Sha256Scalar::compress_block(test_state, cand_block.data(), rounds);
+        IndependentVerifier::independent_compress_block(test_state, cand_block.data(), static_cast<uint32_t>(rounds));
         Sha256Digest cand_digest;
         for (size_t i = 0; i < 8; ++i) store_be32(cand_digest.bytes.data() + i * 4, test_state[i]);
 

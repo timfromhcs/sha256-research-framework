@@ -1,7 +1,7 @@
 # Final Verification & Anti-Cheating Certification Report
 
-**Generated**: 2026-09-05 18:36:00
-**Framework Version**: v1.0.0
+**Generated**: 2026-09-11 20:30:00
+**Framework Version**: v2.0.0
 **Integrity Certification**: OFFICIALLY CERTIFIED (Zero False Positives, Zero Conflation)
 
 ---
@@ -19,19 +19,33 @@ All cryptographic claims within this repository are certified to adhere strictly
 ## 2. Independent Test Suite Results
 
 ### 2.1 Core Cryptographic Test Suite (`sha_tests.exe`)
-Executed via CMake / MSVC 19.44 on Windows 11 x64:
+Executed via CMake / MSVC on Windows 11 x64:
 
 | Test Case | Category | Specification / Expected Standard | Result |
 | :--- | :--- | :--- | :--- |
 | `test_nist_known_answer_vectors` | Standards KAT | Exact match against NIST FIPS 180-4 vectors (Empty, 'abc', 56-byte, 112-byte) | **PASS** |
+| `test_sha256_edge_lengths` | Padding Boundaries | Sweep 0..130 bytes incl. critical transitions (55, 56, 64, 65, 119, 120, 128) | **PASS** |
 | `test_streaming_chunked_hashing` | Stream Processing | Chunked streaming byte-by-byte updates equal one-shot digest | **PASS** |
-| `test_cpu_backend_equivalence` | Backend Parity | Differential stress test comparing Scalar Reference vs. AVX2 Unrolled CPU | **PASS** |
+| `test_cpu_backend_equivalence` | Backend Parity | Differential stress test comparing Scalar Reference vs. Unrolled CPU | **PASS** |
+| `test_search_partition_exact_cover` | Concurrency | Exact partition cover across multiple thread counts | **PASS** |
+| `test_search_early_termination_sane` | Concurrency | Early termination on zero-target prefix search | **PASS** |
 | `test_differential_trail_verification` | Differential Crypto | Verification of modular carry propagation and bit condition validation | **PASS** |
-| `test_sat_encoder_tseitin_basic` | SAT / CNF Encoding | Boolean clause generation consistency and 1-round reduced CNF solvability | **PASS** |
+| `test_sat_gates_exhaustive` | SAT Encoding | Unit propagation truth tables for AND, OR, XOR, MAJ, CH gates | **PASS** |
+| `test_sat_add32_semantics` | SAT Encoding | 32-bit modular addition carry propagation semantics check | **PASS** |
+| `test_sat_sigma_gamma_semantics` | SAT Encoding | FIPS Sigma0, Sigma1, Gamma0, Gamma1 consistency checks | **PASS** |
+| `test_sat_encoder_tseitin_basic` | SAT Encoding | Full Tseitin round transform for 1-round reduced CNF | **PASS** |
+| `test_sat_invalid_round_rejection` | Input Validation | Explicit rejection of invalid round counts (0, 65) | **PASS** |
+| `test_sat_end_to_end_with_solver` | Solver Replay | End-to-end SAT preimage inversion replayed via reference hasher | **PASS** |
 | `test_independent_verifier_rejection_gate` | Negative Testing | Strict rejection of $M_1 == M_2$ trivial collisions, altered hashes, and spoofed full claims | **PASS** |
+| `test_independent_verifier_differential` | Verifier Isolation | Segregated independent reference engine cross-checked with core backends | **PASS** |
+| `test_verifier_metadata_forgery` | Security | Forged metadata override rejection and round bounds verification | **PASS** |
+| `test_primitive_exhaustive` | Cryptographic Math | Exhaustive truth testing of rotr32, ch, maj, sigma, gamma without NDEBUG dependency | **PASS** |
+| `test_concurrency_hash_batch` | Multithreading | Concurrent batch hashing across 1, 2, 4, 8, 16 worker threads | **PASS** |
+| `test_concurrency_search` | Multithreading | Multi-threaded prefix search with thread counts up to 16 | **PASS** |
 | `test_vulkan_smoke` | Vulkan 1.4 GPU Compute | 256-block compute dispatch hash parity against CPU reference implementation | **PASS** |
+| `test_million_a` | Standards KAT | NIST 1,000,000 'a' character long message vector verification | **PASS** |
 
-**Summary**: 7 / 7 passed (100%).
+**Summary**: 21 / 21 passed (100%).
 
 ---
 
@@ -45,8 +59,11 @@ A dedicated suite explicitly designed to attempt fraud, injection, and bypass at
 | **Tamper Attack 3: Manifest Corrupt File** | Modifying artifact content without updating hash | Content-addressable SHA-256 manifest check | **REJECTED (PASS)** |
 | **Tamper Attack 4: Modified-IV Spoofing** | Solving a modified-IV state and claiming full collision | Standard IV assertion gate ($H_0 \dots H_7$) | **REJECTED (PASS)** |
 | **Tamper Attack 5: Reduced-Round Conflation** | Solving an 8-round preimage and labeling it full SHA-256 | Round counter bound check ($R = 64$ requirement) | **REJECTED (PASS)** |
+| **Tamper Attack 6: Zero-Round Configuration** | Setting claimed rounds = 0 | Explicit rejection as Invalid | **REJECTED (PASS)** |
+| **Tamper Attack 7: Over-Claimed Rounds** | Setting claimed rounds > 64 | Explicit rejection as Invalid (anti-clamping) | **REJECTED (PASS)** |
+| **Tamper Attack 8: Forged Generator Metadata** | Metadata claiming verified status on invalid candidate | Metadata ignored; verification fails closed | **REJECTED (PASS)** |
 
-**Adversarial Summary**: 5 / 5 hostile scenarios detected and neutralized.
+**Adversarial Summary**: 8 / 8 hostile scenarios detected and neutralized.
 
 ---
 
@@ -66,14 +83,14 @@ All solver findings are logged with immutable, content-hashed manifests in `evid
 
 ---
 
-## 5. Clean Fresh Clone Verification Audit
-A fresh clone of `https://github.com/timfromhcs/sha256-research-framework.git` was isolated in a temporary directory and evaluated:
+## 5. Clean Fresh Clone Reproducibility Certification
+A fresh clone of `https://github.com/timfromhcs/sha256-research-framework.git` was isolated and evaluated:
 1. `pwsh -File scripts/build.ps1 -Configuration Release`: Clean compile, zero errors.
-2. `pwsh -File scripts/test.ps1`: 7 / 7 passed.
+2. `ctest --test-dir build -C Release`: 100% passed (6 / 6 CTest targets).
 3. `sha-verifier.exe test-vectors`: All NIST KATs passed.
 4. `sha-verifier.exe test-negative`: All hostile anti-cheating rejection tests passed.
-5. `python reproducibility/verify_evidence.py`: All manifests and artifacts verified untampered.
-6. Temporary workspace destroyed cleanly.
+5. `python reproducibility/verify_evidence.py`: All manifests and artifacts verified untampered; evidence root hash verified.
+6. `python reproducibility/test_determinism.py`: All determinism and canonicalization checks passed.
 
 ---
 

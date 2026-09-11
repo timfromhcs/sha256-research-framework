@@ -115,8 +115,8 @@ def init_db(db_path="evidence/knowledge_base.sqlite"):
     for h in default_hypotheses:
         cur.execute("INSERT OR IGNORE INTO hypotheses (id, title, description, falsification_criteria) VALUES (?, ?, ?, ?)", h)
 
-    # Populate experiments from manifests
-    manifests = glob.glob("evidence/experiments/**/manifest.json", recursive=True)
+    # Populate experiments from manifests (sorted for deterministic insertion order)
+    manifests = sorted(glob.glob("evidence/experiments/**/manifest.json", recursive=True))
     for m in manifests:
         try:
             with open(m, "r", encoding="utf-8") as f:

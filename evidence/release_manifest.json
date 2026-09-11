@@ -1,11 +1,15 @@
 {
-  "$schema": "https://json-schema.org/draft-07/schema#",
+  "$schema": "../schemas/release_manifest.schema.json",
+  "manifest_schema_version": "2.0.0",
   "name": "sha256-research-framework",
   "version": "2.0.0",
   "repository": "https://github.com/timfromhcs/sha256-research-framework",
   "target_branch": "main",
   "release_tag": "v2.0.0",
+  "source_commit_sha": "3c4ac1066df4b6ce679bb0df537947678b3caba4",
   "commit_sha": "3c4ac1066df4b6ce679bb0df537947678b3caba4",
+  "release_commit_sha": null,
+  "release_commit_semantics": "The repository release manifest records source_commit_sha (the verified source commit from which all tests, artifacts, and benchmarks were produced prior to release packaging). release_commit_sha is null within the committed tree to eliminate self-referential hash dependency, and is populated in post-release distribution artifacts.",
   "timestamp": "2026-09-11T20:30:00+02:00",
   "certification": {
     "status": "OFFICIALLY_VERIFIED",
@@ -87,8 +91,8 @@
       "status": "PASSED"
     },
     "ctest_suite": {
-      "targets_passed": 5,
-      "targets_total": 5,
+      "targets_passed": 6,
+      "targets_total": 6,
       "status": "PASSED"
     },
     "reproducibility_evidence_test": {
@@ -125,5 +129,5 @@
     "minisat": "2.2.1 (WSL2)",
     "z3": "4.8.12 (WSL2) / 4.16.0 (Python)"
   },
-  "root_evidence_hash": "607c43647646e1b8688ff63d165feebba565f132977936b72b5a3e2b0a5baafe"
+  "root_evidence_hash": "e2ebd84ba4e2ead2b64d483fc4547e77cab995861cc6ae503ac24e144cb37e2d"
 }

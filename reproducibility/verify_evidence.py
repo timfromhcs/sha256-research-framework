@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 Evidence Integrity & Hash Verification Script
-Validates all SHA-256 artifact hashes, manifests, and candidate digests.
+Validates all SHA-256 artifact hashes, manifests, candidate digests,
+and the canonical release manifest root evidence hash.
 """
 
 import os
@@ -15,14 +16,29 @@ def sha256_file(filepath):
     with open(filepath, "rb") as f:
         while chunk := f.read(65536):
             h.update(chunk)
-    return h.hexdigest()
+    return h.hexdigest().lower()
+
+def compute_evidence_root_hash(evidence_dir="evidence"):
+    manifest_pattern = os.path.join(evidence_dir, "experiments", "**", "manifest.json")
+    manifest_files = sorted(glob.glob(manifest_pattern, recursive=True))
+
+    lines = []
+    for m in manifest_files:
+        rel = os.path.relpath(m, evidence_dir).replace(os.sep, "/")
+        with open(m, "rb") as f:
+            h = hashlib.sha256(f.read()).hexdigest().lower()
+        lines.append(f"{rel}:{h}\n")
+
+    canonical_text = "".join(lines).encode("utf-8")
+    return hashlib.sha256(canonical_text).hexdigest().lower()
 
 def verify_evidence(evidence_dir="evidence"):
     print("===============================================================")
     print("        SHA-256 Evidence Integrity & Anti-Tamper Check        ")
     print("===============================================================")
 
-    manifests = glob.glob(f"{evidence_dir}/experiments/**/manifest.json", recursive=True)
+    manifest_pattern = os.path.join(evidence_dir, "experiments", "**", "manifest.json")
+    manifests = sorted(glob.glob(manifest_pattern, recursive=True))
     if not manifests:
         print(f"Warning: No manifests found in {evidence_dir}/experiments.")
         return 0
@@ -36,7 +52,6 @@ def verify_evidence(evidence_dir="evidence"):
         with open(m_path, "r", encoding="utf-8") as f:
             data = json.load(f)
 
-        exp_id = data.get("experiment_id")
         artifacts = data.get("artifacts", [])
 
         for a in artifacts:
@@ -74,6 +89,30 @@ def verify_evidence(evidence_dir="evidence"):
         return 1
 
     print(f"\nAll {len(manifests)} manifests and {total_artifacts} artifacts verified untampered.")
+
+    # Verify release manifest
+    rel_manifest_path = os.path.join(evidence_dir, "release_manifest.json")
+    if os.path.exists(rel_manifest_path):
+        print(f"\nVerifying Release Manifest: {rel_manifest_path}")
+        with open(rel_manifest_path, "r", encoding="utf-8") as f:
+            rel_data = json.load(f)
+
+        expected_root = compute_evidence_root_hash(evidence_dir)
+        actual_root = rel_data.get("root_evidence_hash", "").lower()
+
+        if expected_root != actual_root:
+            print(f"  [TAMPER DETECTED] Release manifest root_evidence_hash mismatch!")
+            print(f"    Expected: {expected_root}")
+            print(f"    Recorded: {actual_root}")
+            return 1
+        print(f"  [OK] root_evidence_hash verified ({actual_root[:16]}...)")
+
+        source_commit = rel_data.get("source_commit_sha")
+        if not source_commit or len(source_commit) != 40:
+            print(f"  [ERROR] Release manifest source_commit_sha invalid or missing: {source_commit}")
+            return 1
+        print(f"  [OK] source_commit_sha verified ({source_commit})")
+
     return 0
 
 if __name__ == "__main__":

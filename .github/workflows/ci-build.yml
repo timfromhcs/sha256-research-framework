@@ -45,6 +45,7 @@ jobs:
           if (-not (Test-Path "$binDir\sha-verifier.exe")) { throw "sha-verifier.exe missing" }
           if (-not (Test-Path "$binDir\sha_adversarial_tests.exe")) { throw "sha_adversarial_tests.exe missing" }
           if (-not (Test-Path "$binDir\test_million_a.exe")) { throw "test_million_a.exe missing" }
+          if (-not (Test-Path "$binDir\test_determinism.exe")) { throw "test_determinism.exe missing" }
           Write-Host "All binaries verified in $binDir."
 
   build-windows-cpuonly:
