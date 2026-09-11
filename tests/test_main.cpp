@@ -67,9 +67,15 @@ void test_nist_known_answer_vectors() {
 }
 
 void test_sha256_edge_lengths() {
-    // Padding-boundary sweep required by spec: 0..129 incl. critical edges.
+    // Padding-boundary sweep required by spec: 0..130 incl. critical edges (55, 56, 64, 65, 119, 120, 128).
     std::vector<size_t> lens = {0, 1, 15, 16, 31, 32, 54, 55, 56, 57, 63, 64,
-                                65, 127, 128, 129, 200, 1000, 4096};
+                                65, 118, 119, 120, 121, 127, 128, 129, 130, 200, 1000, 4096};
+    for (size_t len = 0; len <= 130; ++len) {
+        lens.push_back(len);
+    }
+    std::sort(lens.begin(), lens.end());
+    lens.erase(std::unique(lens.begin(), lens.end()), lens.end());
+
     for (size_t len : lens) {
         std::vector<uint8_t> data(len);
         for (size_t i = 0; i < len; ++i) data[i] = static_cast<uint8_t>((i * 13 + 37) & 0xFF);
@@ -77,7 +83,8 @@ void test_sha256_edge_lengths() {
         Sha256Digest o = Sha256Optimized::hash(data.data(), len);
         Sha256Digest o_ref = Sha256Optimized::hash_path(data.data(), len,
             Sha256Optimized::Path::ScalarReference);
-        if (!(s == o && s == o_ref))
+        Sha256Digest indep = IndependentVerifier::independent_hash(data.data(), len);
+        if (!(s == o && s == o_ref && s == indep))
             throw std::runtime_error("edge-length mismatch at " + std::to_string(len));
         // Streaming split equivalence: hash in two halves.
         if (len > 0) {
@@ -517,17 +524,36 @@ void test_verifier_metadata_forgery() {
 }
 
 void test_primitive_exhaustive() {
-    // Test rotr32 for a few values
-    assert(rotr32(0x12345678, 4) == 0x81234567);
+    // Test rotr32
+    if (rotr32(0x12345678, 4) != 0x81234567) throw std::runtime_error("rotr32 mismatch");
+    if (rotr32(0x80000000, 1) != 0x40000000) throw std::runtime_error("rotr32 bit 31 mismatch");
+    if (rotr32(0x00000001, 1) != 0x80000000) throw std::runtime_error("rotr32 bit 0 mismatch");
+    if (rotr32(0xA5A5A5A5, 0) != 0xA5A5A5A5) throw std::runtime_error("rotr32 0 rot mismatch");
+
     // Test ch and maj with known values
-    assert(ch(0xFFFFFFFF, 0, 0xFFFFFFFF) == 0);
-    assert(maj(0xFFFFFFFF, 0xFFFFFFFF, 0) == 0xFFFFFFFF);
+    if (ch(0xFFFFFFFF, 0x12345678, 0x87654321) != 0x12345678) throw std::runtime_error("ch selector 1 mismatch");
+    if (ch(0x00000000, 0x12345678, 0x87654321) != 0x87654321) throw std::runtime_error("ch selector 0 mismatch");
+    if (ch(0xFFFFFFFF, 0, 0xFFFFFFFF) != 0) throw std::runtime_error("ch all ones mismatch");
+
+    if (maj(0xFFFFFFFF, 0xFFFFFFFF, 0) != 0xFFFFFFFF) throw std::runtime_error("maj two ones mismatch");
+    if (maj(0, 0xFFFFFFFF, 0) != 0) throw std::runtime_error("maj one one mismatch");
+    if (maj(0xAAAAAAAA, 0xCCCCCCCC, 0xF0F0F0F0) != 0xE8E8E8E8) throw std::runtime_error("maj mixed mismatch");
+
     // Test sigma0 and sigma1
-    assert(sigma0(0) == 0);
-    assert(sigma1(0) == 0);
+    if (sigma0(0) != 0) throw std::runtime_error("sigma0(0) mismatch");
+    if (sigma1(0) != 0) throw std::runtime_error("sigma1(0) mismatch");
+    if (sigma0(0x12345678) != (rotr32(0x12345678, 2) ^ rotr32(0x12345678, 13) ^ rotr32(0x12345678, 22)))
+        throw std::runtime_error("sigma0 definition mismatch");
+    if (sigma1(0x12345678) != (rotr32(0x12345678, 6) ^ rotr32(0x12345678, 11) ^ rotr32(0x12345678, 25)))
+        throw std::runtime_error("sigma1 definition mismatch");
+
     // Test gamma0 and gamma1
-    assert(gamma0(0) == 0);
-    assert(gamma1(0) == 0);
+    if (gamma0(0) != 0) throw std::runtime_error("gamma0(0) mismatch");
+    if (gamma1(0) != 0) throw std::runtime_error("gamma1(0) mismatch");
+    if (gamma0(0x87654321) != (rotr32(0x87654321, 7) ^ rotr32(0x87654321, 18) ^ (0x87654321U >> 3)))
+        throw std::runtime_error("gamma0 definition mismatch");
+    if (gamma1(0x87654321) != (rotr32(0x87654321, 17) ^ rotr32(0x87654321, 19) ^ (0x87654321U >> 10)))
+        throw std::runtime_error("gamma1 definition mismatch");
 }
 
 void test_concurrency_hash_batch() {
@@ -618,6 +644,81 @@ void test_vulkan_smoke() {
     }
 }
 
+void test_million_a() {
+    // Create a vector of 1,000,000 'a's
+    std::vector<uint8_t> data(1000000, 'a');
+
+    // Compute using scalar reference
+    sha256_research::Sha256Scalar scalar;
+    scalar.update(data.data(), data.size());
+    sha256_research::Sha256Digest hash_scalar = scalar.finalize();
+
+    // Compute using optimized backend
+    sha256_research::Sha256Digest hash_optimized = sha256_research::Sha256Optimized::hash(data.data(), data.size());
+
+    // Known value from OpenSSL for 1,000,000 'a's
+    const char* known_hex = "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0";
+
+    if (hash_scalar.to_hex() != known_hex) {
+        throw std::runtime_error("Scalar hash mismatch for million 'a's");
+    }
+    if (hash_optimized.to_hex() != known_hex) {
+        throw std::runtime_error("Optimized hash mismatch for million 'a's");
+    }
+}
+
+void test_sat_invalid_round_rejection() {
+    SatEncoder::Sha256ProblemConfig cfg0;
+    cfg0.num_rounds = 0;
+    bool caught0 = false;
+    try {
+        SatEncoder::encode_reduced_rounds(cfg0);
+    } catch (const std::invalid_argument&) {
+        caught0 = true;
+    }
+    if (!caught0) throw std::runtime_error("encode_reduced_rounds accepted 0 rounds");
+
+    SatEncoder::Sha256ProblemConfig cfg65;
+    cfg65.num_rounds = 65;
+    bool caught65 = false;
+    try {
+        SatEncoder::encode_reduced_rounds(cfg65);
+    } catch (const std::invalid_argument&) {
+        caught65 = true;
+    }
+    if (!caught65) throw std::runtime_error("encode_reduced_rounds accepted 65 rounds");
+}
+
+void test_independent_verifier_differential() {
+    // Cross-verify IndependentVerifier::independent_hash vs Sha256Scalar and Sha256Optimized
+    // on all NIST KATs
+    auto kats = IndependentVerifier::get_standard_test_vectors();
+    for (const auto& kat : kats) {
+        Sha256Digest indep = IndependentVerifier::independent_hash(kat.message.data(), kat.message.size());
+        if (indep != kat.expected_digest) {
+            throw std::runtime_error("IndependentVerifier failed KAT: " + kat.name);
+        }
+        Sha256Digest scalar = Sha256Scalar::hash(kat.message.data(), kat.message.size());
+        Sha256Digest opt = Sha256Optimized::hash(kat.message.data(), kat.message.size());
+        if (indep != scalar || indep != opt) {
+            throw std::runtime_error("Cross-verification mismatch on KAT: " + kat.name);
+        }
+    }
+
+    // Cross-verify on random lengths
+    for (int iter = 0; iter < 100; ++iter) {
+        size_t len = test_rng() % 350;
+        std::vector<uint8_t> buf(len);
+        for (size_t i = 0; i < len; ++i) buf[i] = static_cast<uint8_t>(test_rng() & 0xFF);
+        Sha256Digest d_indep = IndependentVerifier::independent_hash(buf.data(), len);
+        Sha256Digest d_scalar = Sha256Scalar::hash(buf.data(), len);
+        Sha256Digest d_opt = Sha256Optimized::hash(buf.data(), len);
+        if (d_indep != d_scalar || d_indep != d_opt) {
+            throw std::runtime_error("Differential mismatch between IndependentVerifier and reference at len " + std::to_string(len));
+        }
+    }
+}
+
 int main() {
     std::cout << "===============================================================\n"
               << "            SHA-256 Framework Test Suite                       \n"
@@ -634,13 +735,16 @@ int main() {
     RUN_TEST(test_sat_add32_semantics);
     RUN_TEST(test_sat_sigma_gamma_semantics);
     RUN_TEST(test_sat_encoder_tseitin_basic);
+    RUN_TEST(test_sat_invalid_round_rejection);
     RUN_TEST(test_sat_end_to_end_with_solver);
     RUN_TEST(test_independent_verifier_rejection_gate);
+    RUN_TEST(test_independent_verifier_differential);
     RUN_TEST(test_verifier_metadata_forgery);
     RUN_TEST(test_primitive_exhaustive);
     RUN_TEST(test_concurrency_hash_batch);
     RUN_TEST(test_concurrency_search);
     RUN_TEST(test_vulkan_smoke);
+    RUN_TEST(test_million_a);
 
     std::cout << "===============================================================\n"
               << "  Results: " << g_tests_passed << " / " << g_tests_run << " passed\n"

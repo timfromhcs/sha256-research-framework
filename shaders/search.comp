@@ -100,7 +100,9 @@ void main() {
         h += 0x5be0cd19u;
 
         // Check if top target_zero_bits of word 'a' are zero
-        uint mask = ~((1u << (32u - pc.target_zero_bits)) - 1u);
+        uint mask = (pc.target_zero_bits == 0u) ? 0u :
+                    (pc.target_zero_bits >= 32u) ? 0xFFFFFFFFu :
+                    ~((1u << (32u - pc.target_zero_bits)) - 1u);
         if ((a & mask) == 0u) {
             if (atomicExchange(found_flag, 1u) == 0u) {
                 winning_nonce_lo = cur_nonce_lo;

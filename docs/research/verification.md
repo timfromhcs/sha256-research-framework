@@ -3,8 +3,9 @@
 ## Separation of Concerns
 The `IndependentVerifier` class is logically and physically separated from candidate search and solver logic:
 - The search engines and SAT solvers do not have permission to mark an experiment outcome as "Confirmed".
-- Every candidate is serialized to raw byte blocks and independently re-evaluated using the golden scalar reference implementation (`Sha256Scalar`).
+- Every candidate is serialized to raw byte blocks and independently re-evaluated using a completely segregated FIPS 180-4 reference implementation within `IndependentVerifier`, eliminating common-mode failure with the research codebase (`Sha256Scalar`).
 - Trivial cases (e.g. $M_A == M_B$) are explicitly caught and rejected.
+- Invalid round counts (< 1 or > 64) are explicitly rejected rather than silently clamped.
 - Candidates with custom IVs or modified constants are classified as `SemiFreeStartCollision` (the `ModifiedIvCollision` enum value is reserved for finer future distinction) rather than `StandardFullCollision`.
 
 ## Negative Test Integrity Gate

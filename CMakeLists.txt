@@ -1,19 +1,20 @@
 cmake_minimum_required(VERSION 3.20)
 project(sha256_research VERSION 1.0.0 LANGUAGES C CXX)
 
+enable_testing()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Compiler flags (portable: no mandatory AVX2; auto-vectorization only)
 if (MSVC)
-    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-        add_compile_options(/W4 /Zi /Ob0 /Od /RTC1)
-    else()
-        add_compile_options(/W4 /O2 /Ob2 /permissive- /utf-8)
-    endif()
+    set(CMAKE_CXX_FLAGS_DEBUG   "/Zi /Ob0 /Od /W4")
+    set(CMAKE_CXX_FLAGS_RELEASE "/W4 /O2 /Ob2 /permissive- /utf-8")
+    set(CMAKE_CXX_FLAGS_MINSIZEREL "/W4 /O1 /Ob1 /DNDEBUG")
+    set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "/W4 /Zi /O2 /Ob1 /DNDEBUG")
 else()
-    add_compile_options(-Wall -Wextra -O3)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -O3")
 endif()
 
 # Include directories
@@ -78,9 +79,20 @@ target_link_libraries(sha_tests PRIVATE sha256_core)
 add_executable(sha-verifier verifier/standalone/main.cpp)
 target_link_libraries(sha-verifier PRIVATE sha256_core)
 
+# Dedicated NIST million 'a' test executable
+add_executable(test_million_a tests/test_million_a.cpp)
+target_link_libraries(test_million_a PRIVATE sha256_core)
+
 # Adversarial & Tamper Detection Tests
 add_executable(sha_adversarial_tests tests/adversarial/test_tamper_detection.cpp)
 target_link_libraries(sha_adversarial_tests PRIVATE sha256_core)
+
+# Add tests to CTest
+add_test(NAME sha-tests COMMAND $<TARGET_FILE:sha_tests>)
+add_test(NAME sha-adversarial-tests COMMAND $<TARGET_FILE:sha_adversarial_tests>)
+add_test(NAME test-million-a COMMAND $<TARGET_FILE:test_million_a>)
+add_test(NAME verifier-kat COMMAND $<TARGET_FILE:sha-verifier> test-vectors)
+add_test(NAME verifier-negative COMMAND $<TARGET_FILE:sha-verifier> test-negative)
 
 # Compile shaders only when Vulkan + glslc are available
 find_program(GLSLC_EXECUTABLE NAMES glslc HINTS "${Vulkan_GLSLC_EXECUTABLE}" "$ENV{VULKAN_SDK}/bin")

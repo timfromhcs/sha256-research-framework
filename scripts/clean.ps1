@@ -7,8 +7,12 @@ param(
 $ErrorActionPreference = "Continue"
 
 Write-Host "Cleaning build directory..." -ForegroundColor Yellow
-if (Test-Path "$PSScriptRoot\..\build") {
-    Remove-Item -Recurse -Force "$PSScriptRoot\..\build"
+$dirsToClean = @("build", "build-cpuonly", "build_cpu", "build_debug", "build_fresh", "Testing")
+foreach ($d in $dirsToClean) {
+    $p = "$PSScriptRoot\..\$d"
+    if (Test-Path $p) {
+        Remove-Item -Recurse -Force $p -ErrorAction SilentlyContinue
+    }
 }
 
 if ($All) {

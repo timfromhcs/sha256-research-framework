@@ -1,2 +1,2 @@
-C: Free 162.29 GB, Used 767.94 GB
-Temp: Free 162.29 GB, Used 767.94 GB
+C: Free 154.32 GB, Used 775.91 GB
+Temp: Free 154.32 GB, Used 775.91 GB

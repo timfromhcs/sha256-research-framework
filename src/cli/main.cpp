@@ -171,8 +171,10 @@ int cmd_experiment_run(int rounds, const std::string& solver_str) {
     else if (solver_str == "cryptominisat") st = SolverType::CryptoMiniSat;
     else if (solver_str == "minisat") st = SolverType::MiniSat;
 
-    if (rounds < 1) rounds = 1;
-    if (rounds > 64) rounds = 64;
+    if (rounds < 1 || rounds > 64) {
+        std::cerr << "Error: Invalid round count " << rounds << ". Rounds must be between 1 and 64.\n";
+        return 1;
+    }
 
     auto utc_now = []() {
         auto now = std::chrono::system_clock::now();

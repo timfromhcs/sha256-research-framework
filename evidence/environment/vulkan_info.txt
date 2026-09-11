@@ -21,7 +21,7 @@ VK_KHR_surface                         : extension revision 25
 VK_KHR_win32_surface                   : extension revision 6
 VK_LUNARG_direct_driver_loading        : extension revision 1
 
-Instance Layers: count = 10
+Instance Layers: count = 12
 ---------------------------
 VK_LAYER_AMD_switchable_graphics  AMD switchable graphics layer                                                                                     1.4.315  version 1
 VK_LAYER_KHRONOS_profiles         Khronos Profiles layer                                                                                            1.4.357  version 1
@@ -33,6 +33,8 @@ VK_LAYER_LUNARG_crash_diagnostic  Crash Diagnostic Layer is a crash/hang debuggi
 VK_LAYER_LUNARG_gfxreconstruct    GFXReconstruct Capture Layer Version 1.0.5                                                                        1.4.357  version 4194309
 VK_LAYER_LUNARG_monitor           Execution Monitoring Layer                                                                                        1.4.357  version 1
 VK_LAYER_LUNARG_screenshot        LunarG image capture layer                                                                                        1.4.357  version 1
+VK_LAYER_VALVE_steam_fossilize    Steam Pipeline Caching Layer                                                                                      1.4.303  version 1
+VK_LAYER_VALVE_steam_overlay      Steam Overlay Layer                                                                                               1.3.207  version 1
 
 Devices:
 ========

@@ -1,5 +1,4 @@
 #include "sha256_research/core/types.hpp"
-#include "sha256_research/sha256/sha256_scalar.hpp"
 #include "sha256_research/verifier/verifier.hpp"
 
 #include <iostream>
@@ -100,13 +99,9 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        Sha256Scalar hasher;
-        char buffer[4096];
-        while (file.read(buffer, sizeof(buffer))) {
-            hasher.update(buffer, sizeof(buffer));
-        }
-        if (file.gcount() > 0) hasher.update(buffer, file.gcount());
-        std::string computed = hasher.finalize().to_hex();
+        std::vector<uint8_t> buffer((std::istreambuf_iterator<char>(file)),
+                                     std::istreambuf_iterator<char>());
+        std::string computed = IndependentVerifier::independent_hash(buffer.data(), buffer.size()).to_hex();
 
         std::cout << "File: " << path << "\n"
                   << "Computed SHA-256: " << computed << "\n";

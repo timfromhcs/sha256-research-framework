@@ -120,6 +120,61 @@ int main() {
         }
     }
 
+    // Test 6: Zero rounds claimed (impossible configuration) must be rejected
+    total++;
+    std::cout << "[Test 6] Zero-round configuration rejection... ";
+    {
+        CollisionCandidate cand;
+        cand.message_a = {'A'};
+        cand.message_b = {'B'};
+        cand.claimed_rounds = 0;
+
+        auto verdict = IndependentVerifier::verify_collision_candidate(cand);
+        if (!verdict.is_valid && verdict.classification == CandidateClassification::Invalid) {
+            passed++;
+            std::cout << "PASSED (Correctly rejected zero-round configuration)\n";
+        } else {
+            std::cout << "FAILED (Accepted or misclassified zero rounds)\n";
+        }
+    }
+
+    // Test 7: Over-claimed rounds (> 64) must be rejected
+    total++;
+    std::cout << "[Test 7] Over-claimed rounds rejection (> 64)... ";
+    {
+        CollisionCandidate cand;
+        cand.message_a = {'A'};
+        cand.message_b = {'B'};
+        cand.claimed_rounds = 100;
+
+        auto verdict = IndependentVerifier::verify_collision_candidate(cand);
+        if (!verdict.is_valid && verdict.classification == CandidateClassification::Invalid) {
+            passed++;
+            std::cout << "PASSED (Correctly rejected rounds > 64)\n";
+        } else {
+            std::cout << "FAILED (Accepted or misclassified rounds > 64)\n";
+        }
+    }
+
+    // Test 8: Forged metadata cannot override verification
+    total++;
+    std::cout << "[Test 8] Forged metadata authority rejection... ";
+    {
+        CollisionCandidate cand;
+        cand.message_a = {'N', 'o', 't'};
+        cand.message_b = {'C', 'o', 'l', 'l', 'i', 'd', 'i', 'n', 'g'};
+        cand.claimed_rounds = 64;
+        cand.generator_metadata = "{\"verified\": true, \"status\": \"CONFIRMED\", \"classification\": \"StandardFullCollision\"}";
+
+        auto verdict = IndependentVerifier::verify_collision_candidate(cand);
+        if (!verdict.is_valid && verdict.classification != CandidateClassification::StandardFullCollision) {
+            passed++;
+            std::cout << "PASSED (Metadata override attempt defeated)\n";
+        } else {
+            std::cout << "FAILED (Metadata permitted forgery to pass)\n";
+        }
+    }
+
     std::cout << "===============================================================\n"
               << "  Adversarial Results: " << passed << " / " << total << " passed\n"
               << "===============================================================\n";

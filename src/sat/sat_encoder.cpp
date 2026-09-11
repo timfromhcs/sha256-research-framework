@@ -1,6 +1,7 @@
 #include "sha256_research/sat/sat_encoder.hpp"
 #include <fstream>
 #include <sstream>
+#include <stdexcept>
 
 namespace sha256_research {
 
@@ -201,8 +202,11 @@ void SatEncoder::fix_const32(CnfFormula& cnf, const std::vector<int>& vars, uint
 }
 
 SatEncoder::Sha256SatEncoding SatEncoder::encode_reduced_rounds(const Sha256ProblemConfig& config) {
+    if (config.num_rounds == 0 || config.num_rounds > 64) {
+        throw std::invalid_argument("Invalid num_rounds: must be between 1 and 64");
+    }
     Sha256SatEncoding enc;
-    uint32_t rounds = std::min(config.num_rounds, 64U);
+    uint32_t rounds = config.num_rounds;
 
     // 1. Message variables W_0..W_{max(15, rounds-1)}
     uint32_t total_w = std::max(16U, rounds);

@@ -33,11 +33,14 @@ jobs:
       - name: Configure CMake
         run: cmake -B build
 
-      - name: Build Test Target
-        run: cmake --build build --config Release --target sha_tests
+      - name: Build Test Targets
+        run: cmake --build build --config Release --target sha_tests test_million_a
 
       - name: Execute Full Test Suite
         shell: pwsh
         run: |
           $binDir = if (Test-Path build\Release) { "build\Release" } else { "build" }
           & "$binDir\sha_tests.exe"
+          if ($LASTEXITCODE -ne 0) { throw "sha_tests failed with exit code $LASTEXITCODE" }
+          & "$binDir\test_million_a.exe"
+          if ($LASTEXITCODE -ne 0) { throw "test_million_a failed with exit code $LASTEXITCODE" }

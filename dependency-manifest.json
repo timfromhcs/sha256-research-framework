@@ -1,18 +1,18 @@
 {
-  "generated_at": "2026-09-05T18:12:56Z",
+  "generated_at": "2026-09-11T20:16:40Z",
   "system": {
-    "Architecture": "64-Bit",
-    "IsAdmin": false,
     "Build": "26200",
     "Caption": "Microsoft Windows 11 Pro",
-    "PowerShell": "7.6.5",
-    "Version": "10.0.26200"
+    "Architecture": "64-Bit",
+    "PowerShell": "7.6.6",
+    "Version": "10.0.26200",
+    "IsAdmin": false
   },
   "cpu": {
     "Name": "AMD Ryzen 7 7735HS with Radeon Graphics",
     "MaxClockSpeedMHz": 3201,
-    "PhysicalCores": 8,
-    "LogicalCores": 16
+    "LogicalCores": 16,
+    "PhysicalCores": 8
   },
   "gpu": {
     "VulkanSupported": true,
@@ -22,43 +22,43 @@
   },
   "toolchains": {
     "git": {
-      "Version": "git version 2.54.0.windows.1",
       "Path": "C:\\Program Files\\Git\\cmd\\git.exe",
+      "Version": "git version 2.54.0.windows.1",
       "Available": true
     },
     "cmake": {
-      "Version": "cmake version 4.4.0",
       "Path": "C:\\Program Files\\Python314\\Scripts\\cmake.exe",
+      "Version": "cmake version 4.4.0",
       "Available": true
     },
     "ninja": {
-      "Version": "ninja 1.13.2",
       "Path": "C:\\Users\\hcsme\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Ninja-build.Ninja_Microsoft.Winget.Source_8wekyb3d8bbwe\\ninja.exe",
+      "Version": "ninja 1.13.2",
       "Available": true
     },
     "clang": {
-      "Version": "clang version 21.0.0git (git@github.com:Compute-Mirrors/llvm-project 5dcc622b51ecd499912c1062ce2b0ecda60d8e93)",
       "Path": "C:\\Program Files\\AMD\\ROCm\\7.1\\bin\\clang.exe",
+      "Version": "clang version 21.0.0git (git@github.com:Compute-Mirrors/llvm-project 5dcc622b51ecd499912c1062ce2b0ecda60d8e93)",
       "Available": true
     },
     "clang++": {
-      "Version": "clang version 21.0.0git (git@github.com:Compute-Mirrors/llvm-project 5dcc622b51ecd499912c1062ce2b0ecda60d8e93)",
       "Path": "C:\\Users\\hcsme\\bin\\clang++.cmd",
+      "Version": "clang version 21.0.0git (git@github.com:Compute-Mirrors/llvm-project 5dcc622b51ecd499912c1062ce2b0ecda60d8e93)",
       "Available": true
     },
     "rustc": {
-      "Version": "rustc 1.96.0 (ac68faa20 2026-05-25)",
       "Path": "C:\\Users\\hcsme\\.cargo\\bin\\rustc.exe",
+      "Version": "rustc 1.96.0 (ac68faa20 2026-05-25)",
       "Available": true
     },
     "cargo": {
-      "Version": "cargo 1.96.0 (30a34c682 2026-05-25)",
       "Path": "C:\\Users\\hcsme\\.cargo\\bin\\cargo.exe",
+      "Version": "cargo 1.96.0 (30a34c682 2026-05-25)",
       "Available": true
     },
     "python": {
-      "Version": "Python 3.14.6",
       "Path": "C:\\Program Files\\Python314\\python.exe",
+      "Version": "Python 3.14.6",
       "Available": true
     },
     "MSVC": {
@@ -78,33 +78,33 @@
   },
   "wsl_solvers": {
     "z3": {
-      "Version": "Z3 version 4.8.12 - 64 bit",
       "Path": "/usr/bin/z3",
+      "Version": "Z3 version 4.8.12 - 64 bit",
       "Available": true
     },
     "cadical": {
-      "Version": "3.0.1",
       "Path": "/usr/local/bin/cadical",
+      "Version": "3.0.1",
       "Available": true
     },
     "kissat": {
-      "Version": "4.0.4",
       "Path": "/usr/local/bin/kissat",
+      "Version": "4.0.4",
       "Available": true
     },
     "minisat": {
-      "Version": "ERROR! Unknown flag \"-version\". Use '--help' for help.",
       "Path": "/usr/bin/minisat",
+      "Version": "ERROR! Unknown flag \"-version\". Use '--help' for help.",
       "Available": true
     },
     "cryptominisat5": {
-      "Version": "c CryptoMiniSat version 5.8.0",
       "Path": "/usr/bin/cryptominisat5",
+      "Version": "c CryptoMiniSat version 5.8.0",
       "Available": true
     },
     "cryptominisat": {
-      "Version": "c CryptoMiniSat version 5.8.0",
       "Path": "/usr/bin/cryptominisat",
+      "Version": "c CryptoMiniSat version 5.8.0",
       "Available": true
     }
   }

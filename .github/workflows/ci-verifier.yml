@@ -41,15 +41,18 @@ jobs:
         run: |
           $binDir = if (Test-Path build\Release) { "build\Release" } else { "build" }
           & "$binDir\sha-verifier.exe" test-vectors
+          if ($LASTEXITCODE -ne 0) { throw "sha-verifier test-vectors failed with exit code $LASTEXITCODE" }
 
       - name: Verify Hostile Negative Rejection Tests
         shell: pwsh
         run: |
           $binDir = if (Test-Path build\Release) { "build\Release" } else { "build" }
           & "$binDir\sha-verifier.exe" test-negative
+          if ($LASTEXITCODE -ne 0) { throw "sha-verifier test-negative failed with exit code $LASTEXITCODE" }
 
       - name: Run Adversarial Tamper Detection Suite
         shell: pwsh
         run: |
           $binDir = if (Test-Path build\Release) { "build\Release" } else { "build" }
           & "$binDir\sha_adversarial_tests.exe"
+          if ($LASTEXITCODE -ne 0) { throw "sha_adversarial_tests failed with exit code $LASTEXITCODE" }

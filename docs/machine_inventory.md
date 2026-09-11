@@ -1,6 +1,6 @@
 # Machine Capability & Environment Inventory
 
-Generated: 2026-09-05 18:12:56 +02:00
+Generated: 2026-09-11 20:16:40 +02:00
 
 ## 1. Operating System
 | Property | Value |
@@ -9,7 +9,7 @@ Generated: 2026-09-05 18:12:56 +02:00
 | **Version** | 10.0.26200 |
 | **Build Number** | 26200 |
 | **Architecture** | 64-Bit |
-| **PowerShell Version** | 7.6.5 |
+| **PowerShell Version** | 7.6.6 |
 | **Administrator Privilege** | False |
 
 ## 2. Hardware Capabilities
@@ -21,8 +21,8 @@ Generated: 2026-09-05 18:12:56 +02:00
 - **Instruction Sets**: x86-64, AVX, AVX2, FMA3, BMI1, BMI2, SSE4.2, SHA-NI
 
 ### Memory & Storage
-- **RAM**: 19.79 GB Visible (1.9 GB Free)
-- **Storage**: C: Free 162.29 GB, Used 767.94 GB; Temp: Free 162.29 GB, Used 767.94 GB
+- **RAM**: 19.79 GB Visible (9.04 GB Free)
+- **Storage**: C: Free 154.32 GB, Used 775.91 GB; Temp: Free 154.32 GB, Used 775.91 GB
 
 ### GPU & Compute Acceleration
 - **GPU Device**: Parsec Virtual Display Adapter

@@ -1,11 +1,15 @@
 # Build outputs
 build/
+build-*/
+build_*/
+Testing/
 bin/
 lib/
 out/
 x64/
 Debug/
 Release/
+.agent/
 
 # Visual Studio
 .vs/
