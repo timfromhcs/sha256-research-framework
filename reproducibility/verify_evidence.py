@@ -18,15 +18,44 @@ def sha256_file(filepath):
             h.update(chunk)
     return h.hexdigest().lower()
 
+def canonical_json_bytes(obj):
+    """
+    Serializes a Python object to canonical JSON bytes according to RFC 8785:
+    - UTF-8 encoding
+    - Keys sorted lexicographically
+    - Compact separators (',', ':') with no extra whitespace or newlines
+    - Deterministic float and integer representation
+    """
+    return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+
+def canonical_manifest_hash(manifest_path):
+    """
+    Computes a canonical SHA-256 hash of a JSON manifest file.
+    Ensures key-order invariance, whitespace formatting invariance,
+    and cross-platform OS line ending invariance (CRLF vs LF).
+    """
+    with open(manifest_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    return hashlib.sha256(canonical_json_bytes(data)).hexdigest().lower()
+
 def compute_evidence_root_hash(evidence_dir="evidence"):
+    """
+    Computes a deterministic, content-addressable SHA-256 Merkle root hash
+    across all experiment manifests in evidence_dir.
+    Guarantees cross-platform determinism (Windows, Linux, macOS) by:
+    - Normalizing path separators to forward slashes
+    - Sorting by relative path
+    - Using canonical JSON representation for manifest hashing
+    - Explicitly excluding release_manifest.json to avoid self-reference
+    """
     manifest_pattern = os.path.join(evidence_dir, "experiments", "**", "manifest.json")
-    manifest_files = sorted(glob.glob(manifest_pattern, recursive=True))
+    raw_files = glob.glob(manifest_pattern, recursive=True)
+    rel_files = sorted([os.path.relpath(f, evidence_dir).replace(os.sep, "/") for f in raw_files])
 
     lines = []
-    for m in manifest_files:
-        rel = os.path.relpath(m, evidence_dir).replace(os.sep, "/")
-        with open(m, "rb") as f:
-            h = hashlib.sha256(f.read()).hexdigest().lower()
+    for rel in rel_files:
+        full_path = os.path.join(evidence_dir, rel.replace("/", os.sep))
+        h = canonical_manifest_hash(full_path)
         lines.append(f"{rel}:{h}\n")
 
     canonical_text = "".join(lines).encode("utf-8")

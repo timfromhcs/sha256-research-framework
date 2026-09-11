@@ -1,0 +1,23 @@
+# Set default behavior to normalize text to LF
+* text=auto eol=lf
+
+# Explicitly ensure source code, schema, evidence, docs and scripts use LF
+*.json text eol=lf
+*.py text eol=lf
+*.cpp text eol=lf
+*.h text eol=lf
+*.md text eol=lf
+*.cmake text eol=lf
+CMakeLists.txt text eol=lf
+*.ps1 text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.txt text eol=lf
+
+# Binaries
+*.spv binary
+*.pt binary
+*.lib binary
+*.exe binary
+*.dll binary
+*.sqlite binary

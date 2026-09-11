@@ -12,23 +12,34 @@ import hashlib
 import argparse
 import subprocess
 
-def compute_root_evidence_hash(evidence_dir="evidence"):
-    """
-    Computes a deterministic, content-addressable SHA-256 Merkle root hash
-    across all experiment manifests in evidence_dir.
-    """
-    manifest_pattern = os.path.join(evidence_dir, "experiments", "**", "manifest.json")
-    manifest_files = sorted(glob.glob(manifest_pattern, recursive=True))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+try:
+    from reproducibility.verify_evidence import (
+        compute_evidence_root_hash,
+        canonical_manifest_hash,
+        canonical_json_bytes
+    )
+    compute_root_evidence_hash = compute_evidence_root_hash
+except ImportError:
+    def canonical_json_bytes(obj):
+        return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
 
-    lines = []
-    for m in manifest_files:
-        rel = os.path.relpath(m, evidence_dir).replace(os.sep, "/")
-        with open(m, "rb") as f:
-            h = hashlib.sha256(f.read()).hexdigest().lower()
-        lines.append(f"{rel}:{h}\n")
+    def canonical_manifest_hash(manifest_path):
+        with open(manifest_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return hashlib.sha256(canonical_json_bytes(data)).hexdigest().lower()
 
-    canonical_text = "".join(lines).encode("utf-8")
-    return hashlib.sha256(canonical_text).hexdigest().lower()
+    def compute_root_evidence_hash(evidence_dir="evidence"):
+        manifest_pattern = os.path.join(evidence_dir, "experiments", "**", "manifest.json")
+        raw_files = glob.glob(manifest_pattern, recursive=True)
+        rel_files = sorted([os.path.relpath(f, evidence_dir).replace(os.sep, "/") for f in raw_files])
+        lines = []
+        for rel in rel_files:
+            full_path = os.path.join(evidence_dir, rel.replace("/", os.sep))
+            h = canonical_manifest_hash(full_path)
+            lines.append(f"{rel}:{h}\n")
+        canonical_text = "".join(lines).encode("utf-8")
+        return hashlib.sha256(canonical_text).hexdigest().lower()
 
 def get_git_commit(ref="HEAD"):
     try:

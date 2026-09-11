@@ -29,7 +29,7 @@
         {
           "rounds": 10,
           "solver": "Kissat 4.0.4",
-          "runtime_seconds": 0.130,
+          "runtime_seconds": 0.13,
           "verified_by": "Independent Verifier Standalone Engine"
         }
       ]
@@ -129,5 +129,5 @@
     "minisat": "2.2.1 (WSL2)",
     "z3": "4.8.12 (WSL2) / 4.16.0 (Python)"
   },
-  "root_evidence_hash": "e2ebd84ba4e2ead2b64d483fc4547e77cab995861cc6ae503ac24e144cb37e2d"
+  "root_evidence_hash": "f931176ae663c8c9ff7f2d3e31cda3af573f9e9b7a70f62c4b1eeac51a7140d5"
 }
