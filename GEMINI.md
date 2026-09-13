@@ -1,946 +1,1279 @@
-# GEMINI.md — Deterministic Release Hardening Protocol
+# SHA-256 Research Framework — GEMINI.md
+## v3.0 Headless Autonomous Research Platform Development Contract
 
-## Mission
+**Repository:** `timfromhcs/sha256-research-framework`
 
-You are the autonomous engineering agent responsible for hardening and validating this repository:
+**Stable branch:** `main`
 
-`timfromhcs/sha256-research-framework`
+**Development branch:** `dev/v3-local-autonomous-research`
 
-Your objective is to bring the repository to a state where all claims regarding:
-
-- reproducibility
-- deterministic behavior
-- cryptographic verification
-- evidence integrity
-- CI correctness
-- release metadata
-- test results
-- independent verification
-
-are technically true, internally consistent, and automatically enforceable.
-
-Do NOT merely make the repository look correct.
-
-Every claim must be backed by executable validation.
+**Target release:** `v3.0.0`
 
 ---
 
-# 1. NON-NEGOTIABLE RULES
+# 0. Mission
 
-You MUST:
+This development cycle transforms the existing SHA-256 Research Framework v2.x into a **headless, local-first, autonomous research platform** while preserving the scientific integrity and cryptographic trust model of the existing system.
 
-1. Read this entire `GEMINI.md` before modifying anything.
-2. Inspect the actual repository state before making assumptions.
-3. Never invent test results.
-4. Never claim a test passed unless you actually executed it or have authoritative CI evidence.
-5. Never claim reproducibility without testing reproducibility.
-6. Never modify evidence to make failed experiments appear successful.
-7. Preserve failed experiments as evidence.
-8. Never weaken tests merely to obtain green CI.
-9. Never remove adversarial tests because they expose implementation problems.
-10. Never silently clamp invalid cryptographic parameters.
-11. Never allow metadata to override independently verified cryptographic facts.
-12. Never claim a full SHA-256 collision, preimage, or cryptographic break unless independently demonstrated and verified.
-13. Reduced-round, semi-free-start, custom-IV, near-collision, toy-model, and heuristic results MUST remain explicitly classified.
-14. Never introduce common-mode verification where the verifier and implementation share the same critical cryptographic logic.
-15. Never commit generated secrets, credentials, tokens, private keys, or machine-specific sensitive data.
-16. Never make a destructive change without first understanding its effect on reproducibility.
-17. Do not stop after finding the first bug.
-18. Continue until the entire relevant validation pipeline is green.
+The v2.x implementation on `main` is the stable baseline and MUST NOT be modified by this agent.
+
+All v3 work MUST happen on:
+
+```text
+dev/v3-local-autonomous-research
+```
+
+The final objective is a fully working local headless platform with:
+
+- Existing SHA-256 C++ core preserved and reusable
+- Independent cryptographic verifier preserved and strengthened
+- Headless research execution
+- Structured experiment lifecycle
+- Persistent SQLite research state
+- Automatic evidence/artifact storage
+- Research workers and job scheduling
+- Local LLM support
+- Local VLM support
+- Local embedding/RAG support
+- Vulkan-capable local model inference
+- CPU fallback
+- Model management
+- Research-agent orchestration
+- Tool-restricted agent operation
+- REST API
+- WebSocket live events
+- Autonomous research campaigns
+- Crash/recovery handling
+- Automatic reports
+- Deterministic/reproducible execution
+- Complete local validation
+- Complete cloud CI validation
+
+The system MUST remain scientifically conservative:
+
+```text
+LLM proposes
+Research engine executes
+Verifier validates
+Evidence system records
+```
+
+The LLM, VLM, planner, solver, frontend, and agent MUST NEVER become authorities for cryptographic truth.
 
 ---
 
-# 2. PRIMARY OBJECTIVE
+# 1. Absolute Branch Protection Rule
 
-Perform a complete deterministic-release audit.
+Before making ANY modification:
 
-Audit and, where necessary, fix:
+1. Inspect repository state.
+2. Confirm current branch.
+3. Confirm `main` is clean and unchanged.
+4. Create the v3 development branch from the current `main`.
 
-- Git commit metadata
-- release manifests
-- version metadata
-- timestamps
-- reproducibility metadata
-- CMake configuration
-- Windows/MSVC builds
-- CPU implementation
-- scalar implementation
-- independent verifier
-- Vulkan backend
-- SPIR-V artifacts
-- SAT encoders
+Expected branch:
+
+```text
+dev/v3-local-autonomous-research
+```
+
+Rules:
+
+- NEVER commit v3 work directly to `main`.
+- NEVER force-push `main`.
+- NEVER rewrite `main`.
+- NEVER delete `main`.
+- NEVER merge into `main`.
+- NEVER alter v2 release artifacts for convenience.
+- NEVER use `main` as a temporary scratch branch.
+- NEVER "fix" v2 on `main` while implementing v3.
+
+The final result of this task MUST be pushed only to:
+
+```text
+origin/dev/v3-local-autonomous-research
+```
+
+The v2 baseline remains intact.
+
+---
+
+# 2. Baseline Audit Before Development
+
+Before architecture changes, inspect:
+
+```text
+README.md
+CHANGELOG.md
+CMakeLists.txt
+CMakePresets.json
+GEMINI.md
+docs/
+include/
+src/
+tests/
+verifier/
+reproducibility/
+evidence/
+tools/
+scripts/
+.github/workflows/
+schemas/
+```
+
+Also inspect:
+
+- existing CI workflows
+- existing test targets
+- existing evidence manifests
+- existing release manifest
+- existing SQLite schema
+- existing CLI behavior
+- current Vulkan implementation
 - solver integration
-- experiment metadata
-- evidence database
-- artifact manifests
-- cryptographic hashes
-- adversarial tests
-- CTest integration
-- PowerShell exit-code propagation
-- GitHub Actions workflows
-- documentation
-- release consistency
-- deterministic outputs
-
-The final repository must not contain internally contradictory release metadata.
-
----
-
-# 3. IMMEDIATE KNOWN ISSUE
-
-The current v2.0.0 release metadata appears to contain a commit SHA inconsistency.
-
-The latest release commit is:
-
-`d575b062be53b40d254047d351d7db1b5150873b`
-
-with commit message:
-
-`release: v2.0.0 - hardened verifier isolation, anti-clamping, CTest integration, release manifest`
-
-However, the release manifest currently references:
-
-`3c4ac1066df4b6ce679bb0df537947678b3caba4`
-
-Investigate this discrepancy.
-
-Do NOT blindly replace the SHA.
-
-Determine:
-
-- what the manifest is intended to represent
-- whether it is supposed to identify the release commit
-- whether generated artifacts depend on the previous commit
-- whether changing the SHA changes the manifest hash
-- whether the release manifest itself is part of the committed release
-- whether a self-referential hash problem exists
-
-Then implement the correct deterministic design.
-
-If the manifest is intended to identify the exact release commit, it MUST identify the actual release commit.
-
-If the architecture intentionally records the source commit used to generate the manifest, document and enforce that semantics instead.
-
-There MUST be exactly one unambiguous interpretation.
-
----
-
-# 4. SELF-REFERENCE / HASHING PROTECTION
-
-Pay special attention to self-referential metadata.
-
-A manifest cannot simultaneously:
-
-- contain the SHA of a Git commit
-- be part of that commit
-- and somehow contain a hash that depends on its own final content
-
-without a defined canonicalization strategy.
-
-If necessary, introduce explicit fields such as:
-
-- `source_commit_sha`
-- `release_commit_sha`
-- `artifact_generation_commit_sha`
-- `manifest_schema_version`
-
-only when technically justified.
-
-Do not add redundant metadata merely for appearance.
-
-Define canonical semantics.
-
-Document them.
-
-Test them.
-
----
-
-# 5. DETERMINISTIC METADATA
-
-Audit all generated metadata for nondeterministic values.
-
-Look for:
-
-- current timestamps
-- random IDs
-- UUIDs
-- machine hostnames
-- usernames
-- absolute paths
-- CPU-specific ordering
-- locale-dependent output
-- filesystem iteration order
-- unordered map serialization
-- thread-dependent ordering
-- environment-dependent formatting
-- compiler-dependent metadata
-- nondeterministic solver output
-- unstable JSON ordering
-- unstable SQLite insertion ordering
-
-For each nondeterministic field, decide whether it should:
-
-A. be removed,
-
-B. be explicitly marked as runtime metadata,
-
-C. be canonicalized,
-
-D. be deterministically derived,
-
-or
-
-E. be intentionally retained but excluded from reproducibility hashes.
-
-Do not simply delete useful scientific metadata.
-
----
-
-# 6. CANONICAL SERIALIZATION
-
-Any data used for integrity hashing MUST have deterministic serialization.
-
-Audit:
-
-- JSON
-- YAML
-- Markdown manifests
-- SQLite-derived metadata
-- experiment artifacts
-- solver results
-- benchmark results
-
-Canonicalization should define:
-
-- field ordering
-- numeric formatting
-- string encoding
-- newline convention
-- Unicode normalization if relevant
-- whitespace handling
-- path representation
-- timestamp representation
-- null handling
-
-If canonical JSON is appropriate, implement it consistently.
-
-Never hash an unstable serialization.
-
----
-
-# 7. EVIDENCE INTEGRITY
-
-Audit the evidence system.
-
-Every experiment must clearly distinguish:
-
-```text
-executed
-verified
-independently_verified
-accepted
-rejected
-```
-
-Do not allow:
-
-```text
-executed = verified
-```
-
-implicitly.
-
-The independent verifier is authoritative for cryptographic validity.
-
-The research engine is NOT authoritative for its own claims.
-
-Verify that evidence records cannot be promoted to a stronger state merely through editable metadata.
-
-Test:
-
-- altered digest
-- altered message
-- altered round count
-- altered IV
-- altered solver result
-- altered metadata
-- altered artifact
-- altered verification state
-- forged verification status
-
-All must fail safely.
-
----
-
-# 8. INDEPENDENT VERIFIER
-
-Audit the independence boundary.
-
-The verifier MUST NOT share critical implementation logic with the research hashing engine in a way that allows a common bug to pass both systems.
-
-Check:
-
-- constants
-- IVs
-- compression function
-- round execution
-- padding
-- message parsing
-- output encoding
-- validation logic
-
-The verifier should be independently testable.
-
-Verify known-answer vectors independently.
-
-Include negative tests.
-
-Do not weaken independence for convenience.
-
----
-
-# 9. CRYPTOGRAPHIC CLAIM CLASSIFICATION
-
-Audit every location where cryptographic results are represented:
-
-- C++
-- Python
-- JSON
-- SQLite
-- Markdown
-- reports
-- CLI
-- tests
-- documentation
-- CI
-- release metadata
-
-The system MUST distinguish at minimum:
-
-```text
-FullSHA256
-ReducedRound
-SemiFreeStart
-CustomIV
-NearCollision
-DifferentialTrail
-Heuristic
-ToyModel
-```
-
-No reduced-round result may be represented as a full SHA-256 break.
-
-No custom-IV result may silently become a standard collision.
-
-No near-collision heuristic may be promoted to a collision.
-
-No ML prediction may be treated as cryptographic proof.
-
----
-
-# 10. TEST STRATEGY
-
-Do not trust existing claims such as "100% pass rate".
-
-Actually execute the relevant tests.
-
-At minimum validate:
-
-## Core
-
-- primitive tests
-- known-answer tests
-- padding boundary tests
-- streaming tests
-- multi-block tests
-- million-'a' test
-
-## Differential
-
-- scalar vs optimized CPU
-- CPU vs Vulkan where available
-- research engine vs independent verifier
-
-## SAT
-
-- Tseitin semantics
-- solver replay
-- solver result verification
-- invalid model rejection
-
-## Security
-
-- one-bit tampering
-- artifact tampering
-- metadata tampering
-- forged rounds
-- forged IV
-- forged digest
-- identical messages
-- invalid rounds
-- over-claimed rounds
-
-## Evidence
-
-- manifest generation
-- manifest verification
-- database integrity
-- artifact integrity
-- rejected evidence
-
----
-
-# 11. DETERMINISM TESTS
-
-Add explicit deterministic tests where missing.
-
-For deterministic operations:
-
-Run the same operation multiple times.
-
-Compare:
-
-- output bytes
-- canonical metadata
-- hashes
-- ordering
-- serialized representations
-
-For example:
-
-```text
-run A
-run B
-run C
-```
-
-must produce identical canonical outputs where determinism is promised.
-
-If runtime metadata intentionally differs, verify that it is excluded from deterministic artifact identity.
-
-Do not fake determinism by ignoring meaningful output differences.
-
----
-
-# 12. PARALLELISM
-
-Audit all multithreaded code.
-
-Look for:
-
-- data races
-- unordered result aggregation
-- thread-dependent ordering
-- shared mutable state
-- nondeterministic IDs
-- race-dependent evidence writes
-
-Where deterministic output is required:
-
-- sort results
-- use stable IDs
-- define deterministic reduction order
-- synchronize database writes
-- avoid relying on thread completion order
-
-Performance must never override correctness.
-
----
-
-# 13. SQLITE
-
-Audit the evidence database.
-
-Check:
-
-- schema version
-- migrations
-- primary keys
-- immutable records
-- transaction boundaries
-- deterministic queries
-- ordering
-- foreign keys
-- integrity checks
-- hash storage
-- verification-state transitions
-
-Queries used for reproducibility MUST use explicit ordering.
-
-Never rely on SQLite's implicit row order.
-
-Run:
-
-```sql
-PRAGMA integrity_check;
-```
-
-and relevant foreign-key checks.
-
----
-
-# 14. POWERSHELL / WINDOWS
-
-Audit every PowerShell script.
-
-Every external command whose failure matters MUST propagate failure correctly.
-
-Pay particular attention to:
-
-```powershell
-$LASTEXITCODE
-$ErrorActionPreference
-```
-
-Do not accidentally convert failed native processes into successful PowerShell execution.
-
-Test:
-
-- successful command
-- failing command
-- missing executable
-- invalid parameter
-- failed CMake build
-- failed test
-- failed verifier
-
-The parent workflow must fail deterministically.
-
----
-
-# 15. CMAKE
-
-Audit:
-
-- version
-- options
-- Vulkan ON/OFF
-- Debug
-- Release
-- MSVC
-- Ninja
-- dependency discovery
-- test registration
-- executable paths
-- install paths
-- generated files
-
-A CPU-only build MUST remain possible without Vulkan SDK dependencies.
-
-A Vulkan build MUST fail clearly if required dependencies are unavailable.
-
-Never silently switch to an unexpected backend.
-
----
-
-# 16. VULKAN / SPIR-V
-
-Audit shader reproducibility.
-
-Verify:
-
-- GLSL source
-- SPIR-V binary
-- compiler version
-- compilation flags
-- shader hash
-- embedded SPIR-V
-- runtime device behavior
-
-If precompiled SPIR-V is committed, document how it was generated.
-
-If shader binaries are generated during build, ensure deterministic generation where claimed.
-
-Check for source/binary mismatch.
-
-Do not accept stale SPIR-V.
-
----
-
-# 17. SAT / SOLVERS
-
-External solvers are environment-dependent.
-
-Never claim deterministic solver behavior unless actually guaranteed.
+- current IndependentVerifier implementation
+- current benchmark system
+- current deterministic test system
 
 Record:
 
-- solver name
-- solver version
-- command
-- configuration
-- seed where applicable
-- input hash
-- output hash
-
-The solver itself is NOT the cryptographic authority.
-
-Every solver result MUST pass the independent verifier.
-
-Invalid solver output MUST be rejected.
-
----
-
-# 18. ML COMPONENT
-
-Treat ML guidance strictly as heuristic.
-
-Audit:
-
-- training data generation
-- random seeds
-- model version
-- feature ordering
-- training configuration
-- PyTorch version
-- model artifact hash
-- metrics
-- baseline comparison
-
-If deterministic training is claimed, test it.
-
-If deterministic training is not guaranteed, explicitly label it as nondeterministic.
-
-Never describe ML ranking as cryptographic proof.
-
----
-
-# 19. RELEASE CONSISTENCY
-
-All of the following MUST agree:
-
-- project version
-- README version
-- changelog
-- release manifest
-- CMake version
-- package metadata
-- Git tag
-- release commit
-- documentation
-- test reports
-
-Search the repository for stale:
-
 ```text
-1.0.0
-1.0
-old commit SHA
-old release tag
-old timestamps
-old workflow IDs
+baseline_commit
+baseline_branch
+compiler
+CMake
+Python
+Vulkan
+solver versions
+test status
+CI status
+evidence status
 ```
 
-Do not blindly replace historical references that are legitimately historical.
+Do not proceed if the repository baseline is ambiguous.
 
-Distinguish:
+---
+
+# 3. Existing Scientific Integrity Is Non-Negotiable
+
+The following principles MUST remain true after v3:
+
+### Full SHA-256 remains correctly classified
+
+The framework MUST NOT claim a standard full SHA-256 collision, preimage, or break unless independently proven by the actual verifier.
+
+Reduced-round results MUST remain distinct from standard 64-round SHA-256.
+
+Modified/custom IV experiments MUST remain explicitly classified.
+
+Near-collisions MUST remain heuristic classifications only.
+
+Solver output MUST NOT be treated as cryptographic proof.
+
+LLM output MUST NOT be treated as cryptographic proof.
+
+VLM output MUST NOT be treated as cryptographic proof.
+
+Agent metadata MUST NOT override verification.
+
+---
+
+# 4. v3 Architecture
+
+Build the system as separated layers:
 
 ```text
-current metadata
-historical evidence
+                    WEB FRONTEND
+                          |
+                     REST/WebSocket
+                          |
+                    HEADLESS API
+                          |
+                RESEARCH ORCHESTRATOR
+                          |
+       +------------------+------------------+
+       |                  |                  |
+       v                  v                  v
+   MODEL RUNTIME      JOB WORKERS       EVIDENCE STORE
+       |                  |                  |
+       v                  v                  v
+ LLM / VLM / RAG     SHA/SAT/SOLVER     SQLite + Files
+                          |
+                          v
+                  INDEPENDENT VERIFIER
+```
+
+The existing cryptographic core remains below this layer.
+
+---
+
+# 5. Core Separation
+
+The cryptographic core MUST NOT depend on:
+
+- frontend
+- FastAPI
+- React
+- LLM
+- VLM
+- embeddings
+- RAG
+- agent prompts
+- browser code
+
+The cryptographic core MUST remain usable headlessly and independently.
+
+The API and agent layers call the core through well-defined interfaces.
+
+---
+
+# 6. CLI Must Become a Client of the Application Layer
+
+Do not keep research logic buried inside CLI command implementations.
+
+Refactor toward:
+
+```text
+CLI
+ |
+ v
+Application/Service Layer
+ |
+ v
+Core
+```
+
+The same application interfaces MUST be usable by:
+
+```text
+CLI
+API
+Workers
+Agent
+Tests
+```
+
+The CLI may remain in v3, but it MUST NOT be the only path to execute research.
+
+---
+
+# 7. Experiment Model
+
+Introduce a structured experiment representation.
+
+Every experiment MUST contain at least:
+
+```text
+experiment_id
+hypothesis_id
+created_at
+status
+rounds
+solver
+backend
+seed
+timeout
+parameters
+source_commit
+environment
+```
+
+Experiment states MUST be explicit.
+
+Example lifecycle:
+
+```text
+QUEUED
+PREPARING
+RUNNING
+VERIFYING
+COMPLETED
+FAILED
+TIMEOUT
+CANCELLED
+REJECTED
+```
+
+State transitions MUST be persisted.
+
+An agent restart MUST NOT destroy historical state.
+
+---
+
+# 8. SQLite Research State
+
+Extend the existing database architecture instead of creating an unrelated second database.
+
+At minimum support entities equivalent to:
+
+```text
+projects
+research_goals
+hypotheses
+experiments
+experiment_runs
+candidates
+verifications
+artifacts
+models
+model_runs
+agent_actions
+tool_calls
+observations
+metrics
+datasets
+benchmarks
+reports
+jobs
+events
+```
+
+Store structured metadata in SQLite.
+
+Store potentially large artifacts on disk.
+
+Link artifacts through deterministic paths and hashes.
+
+---
+
+# 9. Evidence Storage
+
+Every completed experiment MUST automatically produce an auditable evidence package.
+
+Expected conceptual structure:
+
+```text
+evidence/
+  experiments/
+    <experiment_id>/
+      request.json
+      environment.json
+      stdout.log
+      stderr.log
+      result.json
+      verification.json
+      manifest.json
+      report.md
+```
+
+The exact structure may differ if a better existing convention is already present.
+
+Evidence MUST record:
+
+```text
+experiment
+source commit
+software versions
+hardware
+backend
+solver
+seed
+parameters
+result
+verification state
+artifact hashes
+```
+
+Never silently overwrite prior experiment evidence.
+
+---
+
+# 10. Correct Integrity Terminology
+
+Do not describe a simple aggregate hash as a Merkle tree unless a real Merkle tree is implemented.
+
+Prefer terminology such as:
+
+```text
+Evidence Root Hash
+Deterministic Evidence Root
+Content-Addressed Evidence
+```
+
+Do not call ordinary mutable repository files "immutable" unless the actual mechanism provides immutability.
+
+Use precise terminology:
+
+```text
+integrity-checked
+content-addressed
+tamper-detectable
 ```
 
 ---
 
-# 20. DOCUMENTATION AUDIT
+# 11. Independent Verifier
 
-Documentation must describe what the software ACTUALLY does.
+The IndependentVerifier MUST remain a separate trust boundary.
 
-Remove unsupported claims.
-
-Do not use marketing language that exceeds the implementation.
-
-Every statement such as:
-
-- verified
-- deterministic
-- reproducible
-- immutable
-- independent
-- hardened
-- secure
-
-must have an actual technical basis.
-
-If a feature is experimental, say so.
-
-If a property is conditional, document the condition.
-
----
-
-# 21. FAILURE-FIRST ENGINEERING
-
-When something fails:
-
-1. Capture the exact failure.
-2. Identify root cause.
-3. Fix the implementation.
-4. Add or strengthen a regression test.
-5. Re-run the failing test.
-6. Re-run the affected subsystem.
-7. Re-run the complete suite.
-8. Re-check unrelated functionality.
-
-Never:
-
-```text
-disable test
-delete test
-weaken assertion
-change expected result
-ignore exit code
-```
-
-just to obtain green CI.
-
----
-
-# 22. NO PLACEBO FIXES
-
-A fix is invalid if it only changes:
-
-- README wording
-- status labels
-- expected values
-- test thresholds
-- displayed output
-
-without fixing the underlying behavior.
+Strengthen isolation where practical.
 
 Prefer:
 
 ```text
-bug
-→ regression test
-→ implementation fix
-→ full validation
+sha-verifier
+    |
+    +-- independent verifier implementation only
 ```
 
----
-
-# 23. AGENT LOOP
-
-Operate in this exact loop:
+Avoid unnecessary linkage to:
 
 ```text
-INSPECT
-↓
-IDENTIFY
-↓
-PLAN
-↓
-PATCH
-↓
-FORMAT
-↓
-BUILD
-↓
-TEST
-↓
-ADVERSARIAL TEST
-↓
-DETERMINISM TEST
-↓
-AUDIT
-↓
-DOCUMENT
-↓
-REPEAT
+SAT
+solver
+search
+benchmark
+research orchestration
 ```
 
-Do not stop because one subsystem passes.
+Do not let agent state modify verifier rules.
 
-Continue until no known release-blocking issue remains.
+Do not let metadata override verification.
+
+Do not let solver results bypass verification.
 
 ---
 
-# 24. GIT DISCIPLINE
+# 12. Anti-Clamping Requirement
 
-Before modifying:
+No hidden parameter normalization may silently convert invalid cryptographic requests into valid requests.
 
-```bash
-git status
-git branch --show-current
-git log -10 --oneline
-git tag --list
+Do NOT allow patterns such as:
+
+```cpp
+min(rounds, 64)
 ```
 
-Record the initial state.
+for validation-sensitive inputs.
 
-After modifications:
+Invalid round values MUST fail explicitly.
 
-```bash
-git diff --check
-git status
-git diff
-```
-
-Do not accidentally commit:
-
-- build directories
-- temporary files
-- local databases
-- credentials
-- IDE files
-- machine-specific artifacts
-
-unless intentionally versioned by the project.
-
----
-
-# 25. FINAL VALIDATION GATE
-
-The task is NOT complete until all applicable gates pass.
-
-Required final gates:
+Required behavior:
 
 ```text
-[ ] repository consistency
-[ ] version consistency
-[ ] release metadata consistency
-[ ] release commit semantics
-[ ] deterministic serialization
-[ ] deterministic hashing
-[ ] independent verifier
-[ ] core KATs
-[ ] million-a test
-[ ] padding sweep
-[ ] adversarial tests
-[ ] SAT semantic tests
-[ ] solver replay
-[ ] evidence integrity
-[ ] SQLite integrity
-[ ] CPU build
-[ ] Release build
-[ ] Debug build
-[ ] Vulkan build where environment permits
-[ ] CPU-only build
-[ ] PowerShell failure propagation
-[ ] CI configuration
-[ ] documentation consistency
-[ ] no stale release metadata
-[ ] no unsupported cryptographic claims
-[ ] no secrets
-[ ] git diff clean
+rounds < 1   -> reject
+rounds > 64  -> reject
 ```
 
-If a gate cannot run because the environment lacks a dependency, explicitly record:
+Audit all code paths, including low-level APIs.
 
-```text
-NOT RUN — ENVIRONMENT LIMITATION
-```
-
-Do NOT mark it PASS.
+The validation contract applies recursively, not only at CLI level.
 
 ---
 
-# 26. DETERMINISTIC END CONDITION
+# 13. Local Model Runtime
 
-The task has a deterministic completion condition.
+Add a local inference layer.
 
-You may declare completion ONLY when:
+Primary design target:
 
-1. Every discovered release-blocking bug has been fixed.
-2. Every fix has a regression test where appropriate.
-3. All executable applicable tests pass.
-4. Deterministic outputs have been tested.
-5. Release metadata is internally consistent.
-6. The release commit semantics are unambiguous.
-7. No stale metadata remains.
-8. Cryptographic claim classification is correct.
-9. Documentation matches implementation.
-10. No test has been weakened or removed to obtain success.
-11. GitHub CI configuration is consistent with the local validation model.
-12. The final repository diff has been inspected.
-13. The final commit SHA is determined AFTER all changes.
-14. Any generated release manifest referring to the final commit is generated according to a documented non-self-referential process.
+```text
+GGUF
++
+llama.cpp
++
+Vulkan
++
+CPU fallback
+```
+
+The runtime MUST support:
+
+- local execution
+- no mandatory cloud inference
+- Vulkan when available
+- CPU fallback
+- model discovery
+- model loading/unloading
+- configuration through manifests
+- deterministic configuration capture
+
+Do not build a second inference engine unless technically necessary.
 
 ---
 
-# 27. FINAL REPORT
+# 14. Model Classes
 
-At the end, produce a concise but technically complete report containing:
-
-## Changes
-
-List every meaningful modification.
-
-## Bugs Found
-
-List:
-
-- bug
-- root cause
-- fix
-- regression test
-
-## Validation
-
-For every test:
+The platform MUST conceptually support:
 
 ```text
-PASS
-FAIL
-NOT RUN
+Research LLM
+Vision-Language Model
+Embedding Model
 ```
 
-Never invent results.
+Models MUST have manifests containing at least:
 
-## Determinism
+```text
+model_id
+name
+format
+quantization
+context_length
+runtime
+backend
+size
+checksum
+capabilities
+```
 
-State exactly what was tested and whether repeated runs produced identical canonical outputs.
-
-## Release Metadata
-
-State:
-
-- version
-- release tag
-- final commit SHA
-- manifest semantics
-- whether any self-reference exists
-
-## Remaining Limitations
-
-List every limitation honestly.
-
-## Security / Scientific Integrity
-
-Explicitly confirm that:
-
-- no full SHA-256 break is claimed
-- reduced-round results remain reduced-round
-- solver output is independently verified
-- ML remains heuristic
-- metadata cannot override cryptographic verification
+Do not silently download or replace models without recording the source and checksum.
 
 ---
 
-# 28. FINAL PRINCIPLE
+# 15. iGPU-First Requirements
 
-The repository is not considered correct because Gemini says it is correct.
+Optimize for local integrated-GPU operation.
 
-The repository is correct only when:
+The system MUST detect:
 
 ```text
-implementation
-    ↓
-tests
-    ↓
-independent verification
-    ↓
-evidence integrity
-    ↓
-deterministic reproduction
-    ↓
-CI
-    ↓
-release metadata
+CPU
+GPU
+Vulkan availability
+shared memory / approximate memory budget
+supported backend
 ```
 
-all agree.
+The model manager SHOULD use a conservative memory budget.
 
-**Never optimize for a green report.
+Do not automatically load several large models simultaneously.
 
-Optimize for a system that deserves a green report.**
+Prefer:
+
+```text
+load
+use
+unload
+```
+
+over permanent multi-model residency on low-memory iGPU machines.
+
+---
+
+# 16. Model Routing
+
+Implement task-aware routing.
+
+Conceptually:
+
+```text
+simple planning      -> small LLM
+research reasoning  -> research LLM
+image/plot analysis  -> VLM
+semantic retrieval   -> embedding model
+cryptographic truth  -> verifier
+```
+
+Do not route cryptographic verification to an LLM.
+
+---
+
+# 17. Agent Design
+
+Implement the autonomous research agent as a controlled planner.
+
+The agent MAY:
+
+```text
+inspect research history
+create hypotheses
+design experiments
+select valid parameters
+request experiments
+compare results
+analyze evidence
+generate follow-up hypotheses
+generate reports
+```
+
+The agent MUST NOT directly receive unrestricted:
+
+```text
+shell
+filesystem write
+SQL
+network
+arbitrary process execution
+```
+
+unless explicitly mediated through validated tools.
+
+---
+
+# 18. Tool Interface
+
+Implement an explicit tool registry.
+
+Conceptual tools:
+
+```text
+get_system_status
+list_models
+load_model
+unload_model
+create_hypothesis
+list_hypotheses
+create_experiment
+run_experiment
+get_experiment
+cancel_experiment
+verify_candidate
+compare_experiments
+search_evidence
+read_artifact
+analyze_results
+benchmark_backend
+generate_report
+```
+
+Each tool MUST validate its arguments before execution.
+
+The agent MUST never bypass the tool layer.
+
+---
+
+# 19. Research Loop
+
+Implement an autonomous research cycle conceptually equivalent to:
+
+```text
+OBSERVE
+  ->
+FORM HYPOTHESIS
+  ->
+DESIGN EXPERIMENT
+  ->
+VALIDATE PLAN
+  ->
+EXECUTE
+  ->
+VERIFY
+  ->
+STORE EVIDENCE
+  ->
+ANALYZE
+  ->
+DECIDE NEXT STEP
+```
+
+Every stage MUST leave an auditable record.
+
+No hidden agent state may be the only source of truth.
+
+---
+
+# 20. Trust Levels
+
+Introduce explicit epistemic state.
+
+Recommended levels:
+
+```text
+L0  Model Suggestion
+L1  Unverified Observation
+L2  Experiment Output
+L3  Independently Verified
+L4  Reproduced
+L5  Cross-Environment Reproduced
+```
+
+The UI, database and agent memory SHOULD preserve these levels.
+
+The agent MUST NOT promote L0/L1/L2 to L3 without actual verifier evidence.
+
+---
+
+# 21. VLM
+
+Add VLM support for structured visual analysis.
+
+Possible inputs:
+
+```text
+plots
+graphs
+research figures
+solver visualizations
+generated experiment images
+```
+
+VLM output MUST be stored as an observation.
+
+Example:
+
+```text
+visual_observation
+confidence
+source_artifact
+model
+timestamp
+```
+
+VLM conclusions MUST NOT automatically become cryptographic claims.
+
+---
+
+# 22. Local RAG / Research Memory
+
+Add local retrieval over:
+
+```text
+documentation
+reports
+experiments
+evidence metadata
+research notes
+datasets
+```
+
+Keep evidence states separate from model-generated summaries.
+
+Prefer verified evidence during retrieval when a fact is security-critical.
+
+---
+
+# 23. Worker Architecture
+
+Long-running experiments MUST NOT block HTTP request handling.
+
+Use:
+
+```text
+API
+ |
+ v
+Job Queue
+ |
+ v
+Worker
+ |
+ v
+C++ / SAT / Solver
+ |
+ v
+Verifier
+ |
+ v
+Evidence
+ |
+ v
+SQLite
+```
+
+Workers MUST capture exit codes.
+
+Workers MUST capture stdout/stderr.
+
+Workers MUST report terminal state reliably.
+
+---
+
+# 24. Crash Recovery
+
+Jobs left in:
+
+```text
+RUNNING
+PREPARING
+VERIFYING
+```
+
+during an unexpected process termination MUST be detectable.
+
+On restart:
+
+```text
+orphaned
+```
+
+jobs MUST become recoverable according to deterministic retry policy.
+
+Never silently pretend a crashed experiment completed.
+
+---
+
+# 25. API
+
+Implement a local-first REST API.
+
+At minimum expose conceptual routes for:
+
+```text
+GET  /api/status
+GET  /api/system
+GET  /api/models
+
+GET  /api/hypotheses
+POST /api/hypotheses
+
+GET  /api/experiments
+POST /api/experiments
+GET  /api/experiments/{id}
+POST /api/experiments/{id}/cancel
+
+GET  /api/jobs
+GET  /api/evidence/{id}
+POST /api/verify
+```
+
+Add WebSocket or equivalent event streaming for live status.
+
+---
+
+# 26. Frontend
+
+The frontend MUST be a client of the headless API.
+
+It MUST NOT contain the cryptographic business logic.
+
+The backend MUST work completely without the frontend.
+
+The frontend SHOULD expose:
+
+```text
+Dashboard
+Research
+Experiments
+Hypotheses
+Evidence
+Models
+Agent
+System
+Logs
+Reports
+```
+
+---
+
+# 27. Automatic Saving
+
+The system MUST automatically persist:
+
+```text
+agent actions
+tool calls
+experiment requests
+experiment outputs
+verification outputs
+model metadata
+model calls
+observations
+artifacts
+reports
+errors
+events
+```
+
+No important research state may exist only in memory.
+
+---
+
+# 28. Determinism
+
+Where deterministic execution is possible, enforce it.
+
+Capture:
+
+```text
+seed
+commit
+parameters
+model
+model checksum
+solver version
+backend
+environment
+```
+
+Deterministic state MUST be included in reproducibility records.
+
+Never fake determinism where external hardware scheduling makes strict determinism impossible.
+
+Document unavoidable nondeterminism explicitly.
+
+---
+
+# 29. Local Verification Loop
+
+After implementation work, perform a complete local validation loop.
+
+This loop MUST NOT be considered complete until ALL relevant checks pass.
+
+Minimum conceptual sequence:
+
+```text
+clean build
+    ->
+unit tests
+    ->
+adversarial tests
+    ->
+KATs
+    ->
+determinism tests
+    ->
+verifier negative tests
+    ->
+evidence verification
+    ->
+API tests
+    ->
+worker tests
+    ->
+model runtime smoke test
+    ->
+Vulkan smoke test when hardware exists
+    ->
+agent tool-policy tests
+    ->
+end-to-end research test
+```
+
+The exact commands MUST be derived from the actual repository.
+
+Never invent successful output.
+
+---
+
+# 30. Local Loop Failure Rule
+
+If ANY required local check fails:
+
+```text
+STOP
+ |
+diagnose
+ |
+fix
+ |
+rerun affected tests
+ |
+rerun complete local validation
+```
+
+Do not continue to the cloud phase while local validation is red.
+
+Do not mark a failed test as expected unless the repository explicitly defines it as expected.
+
+Do not weaken a test to make it pass.
+
+Do not delete tests because they expose a regression.
+
+---
+
+# 31. Cloud Validation Loop
+
+Only after the local validation loop is completely green:
+
+```text
+commit
+push dev branch
+```
+
+Then inspect GitHub Actions.
+
+The cloud loop MUST continue until:
+
+```text
+build = PASS
+tests = PASS
+verifier = PASS
+security = PASS
+evidence = PASS
+documentation = PASS
+all relevant v3 jobs = PASS
+```
+
+Use actual CI results.
+
+Never infer success from local execution.
+
+---
+
+# 32. Cloud Loop Failure Rule
+
+If cloud CI fails:
+
+```text
+inspect failing workflow
+ |
+inspect logs
+ |
+diagnose root cause
+ |
+fix on dev branch
+ |
+local validation again
+ |
+commit
+ |
+push
+ |
+cloud validation again
+```
+
+Cloud fixes MUST first survive the complete local validation loop before being accepted.
+
+This creates:
+
+```text
+LOCAL LOOP
+    ↓
+PUSH
+    ↓
+CLOUD LOOP
+    ↓
+if failure -> LOCAL LOOP
+```
+
+Repeat until fully green.
+
+---
+
+# 33. No False Completion
+
+Do NOT declare:
+
+```text
+complete
+production ready
+100% verified
+perfect
+```
+
+unless the required local and cloud validation loops are actually green.
+
+Do not manufacture proof.
+
+Do not infer unavailable hardware validation.
+
+Do not report tests that were not executed.
+
+---
+
+# 34. Final Branch Requirements
+
+At successful completion:
+
+```text
+main
+    remains unchanged
+```
+
+and:
+
+```text
+dev/v3-local-autonomous-research
+    contains the complete v3 implementation
+```
+
+The dev branch MUST contain:
+
+- source
+- tests
+- documentation
+- manifests
+- model runtime integration
+- API
+- worker system
+- research orchestration
+- evidence integration
+- frontend
+- CI updates
+- reproducibility metadata
+
+Do not merge the dev branch into `main`.
+
+Do not delete the dev branch.
+
+---
+
+# 35. Final Verification Before Push
+
+Immediately before the final push:
+
+1. Verify current branch is the v3 dev branch.
+2. Verify `main` was never modified.
+3. Run the complete local validation loop.
+4. Inspect `git diff`.
+5. Inspect untracked files.
+6. Ensure no secrets are present.
+7. Ensure generated junk/build directories are excluded.
+8. Ensure manifests reference the correct source commit semantics.
+9. Ensure version metadata is internally consistent.
+10. Ensure documentation matches implementation.
+11. Ensure the repository remains buildable without optional components where promised.
+12. Ensure tests reflect real behavior.
+
+Then commit.
+
+---
+
+# 36. Commit Rules
+
+Use explicit, meaningful commits.
+
+Examples:
+
+```text
+feat(v3): introduce headless application layer
+feat(v3): add persistent experiment state
+feat(v3): add local Vulkan model runtime
+feat(v3): add research agent tool registry
+feat(v3): add autonomous campaign scheduler
+feat(v3): add local research API
+feat(v3): add live research events
+test(v3): add end-to-end headless validation
+fix(v3): ...
+```
+
+Do not create meaningless commits such as:
+
+```text
+update
+fix
+stuff
+changes
+```
+
+---
+
+# 37. Final Deterministic End
+
+This task has a strict terminal condition.
+
+The agent MUST end only after:
+
+```text
+v3 implementation complete
++
+full local validation GREEN
++
+cloud CI GREEN
++
+final changes committed
++
+final push completed
+```
+
+Final action:
+
+```text
+git push origin dev/v3-local-autonomous-research
+```
+
+After the successful final push:
+
+```text
+STOP.
+```
+
+No additional feature development.
+
+No merge into `main`.
+
+No speculative cleanup.
+
+No extra refactor.
+
+No endless optimization loop.
+
+No automatic release of `main`.
+
+No further commits after the final successful push.
+
+The successful push to:
+
+```text
+origin/dev/v3-local-autonomous-research
+```
+
+is the deterministic end state.
+
+---
+
+# 38. Required Final Report
+
+Before termination, output only a concise completion report containing:
+
+```text
+branch
+final commit
+local validation status
+cloud validation status
+major v3 components implemented
+known limitations
+final push status
+```
+
+The report MUST distinguish:
+
+```text
+implemented
+tested locally
+verified in CI
+not verified
+```
+
+Do not claim anything beyond actual evidence.
+
+---
+
+# 39. Hard Prohibitions
+
+NEVER:
+
+- modify `main`
+- force-push `main`
+- merge v3 into `main`
+- remove tests to obtain green CI
+- silently clamp invalid crypto parameters
+- trust LLM/VLM output as cryptographic truth
+- bypass IndependentVerifier
+- silently overwrite evidence
+- fabricate benchmark results
+- fabricate CI results
+- fabricate model availability
+- invent unsupported dependencies
+- introduce cloud-only runtime requirements
+- make local operation dependent on the frontend
+- leave critical research state only in memory
+- declare completion before both validation loops are green
+- continue making changes after the final successful push
+
+---
+
+# 40. Definition of Done
+
+v3 is DONE only when:
+
+```text
+[ ] main preserved
+[ ] dev/v3-local-autonomous-research created
+[ ] headless architecture implemented
+[ ] core separated from UI
+[ ] experiment lifecycle implemented
+[ ] persistent SQLite research state implemented
+[ ] automatic evidence storage implemented
+[ ] worker execution implemented
+[ ] API implemented
+[ ] WebSocket/live events implemented
+[ ] local LLM runtime implemented
+[ ] Vulkan backend integrated where available
+[ ] CPU fallback works
+[ ] VLM support implemented
+[ ] embedding/RAG layer implemented
+[ ] agent tool boundary implemented
+[ ] autonomous research loop implemented
+[ ] crash recovery implemented
+[ ] frontend consumes API only
+[ ] local validation fully GREEN
+[ ] cloud validation fully GREEN
+[ ] documentation synchronized
+[ ] final commit created
+[ ] final push to dev branch succeeds
+[ ] deterministic STOP executed
+```
+
+# END OF GEMINI DEVELOPMENT CONTRACT
