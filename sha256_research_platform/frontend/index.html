@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SHA-256 Research Platform v3.0</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="top-header">
+      <div class="brand">
+        <span class="logo-icon">⚡</span>
+        <div>
+          <h1>SHA-256 Autonomous Research Platform</h1>
+          <span class="subtitle">v3.0 Headless Autonomous Cryptanalysis Engine</span>
+        </div>
+      </div>
+      <div class="header-status">
+        <div class="badge badge-success" id="connection-status">● API Connected</div>
+        <div class="badge badge-info" id="ws-status">● Live Stream</div>
+      </div>
+    </header>
+
+    <!-- Epistemic Integrity Banner -->
+    <div class="scientific-banner">
+      <strong>Scientific Integrity Boundary:</strong>
+      LLM proposes &bull; Research engine executes &bull; Verifier validates &bull; Evidence records.
+      AI models, frontends, and heuristics are NOT authorities for cryptographic truth.
+    </div>
+
+    <!-- Navigation -->
+    <nav class="nav-tabs">
+      <button class="nav-btn active" data-tab="dashboard">Dashboard</button>
+      <button class="nav-btn" data-tab="campaigns">Research Campaigns</button>
+      <button class="nav-btn" data-tab="experiments">Experiments</button>
+      <button class="nav-btn" data-tab="hypotheses">Hypotheses</button>
+      <button class="nav-btn" data-tab="models">Models & Memory</button>
+      <button class="nav-btn" data-tab="evidence">Evidence Store</button>
+      <button class="nav-btn" data-tab="verifier">Independent Verifier</button>
+      <button class="nav-btn" data-tab="logs">Live Events</button>
+      <button class="nav-btn" data-tab="reports">Reports</button>
+    </nav>
+
+    <!-- Tab Contents -->
+    <main class="content-area">
+
+      <!-- 1. Dashboard Tab -->
+      <section id="tab-dashboard" class="tab-pane active">
+        <div class="grid-metrics">
+          <div class="metric-card">
+            <span class="metric-label">System State</span>
+            <span class="metric-value text-success" id="metric-system-state">ONLINE</span>
+            <span class="metric-sub" id="metric-device-name">Detecting...</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">Active Experiments</span>
+            <span class="metric-value" id="metric-exp-count">0</span>
+            <span class="metric-sub">SQLite Persistent</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">Active Hypotheses</span>
+            <span class="metric-value" id="metric-hyp-count">0</span>
+            <span class="metric-sub">Research Goals</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">Vulkan Acceleration</span>
+            <span class="metric-value text-info" id="metric-vulkan-state">PROBING</span>
+            <span class="metric-sub" id="metric-memory-budget">Memory Budget: ...</span>
+          </div>
+        </div>
+
+        <div class="dashboard-sections">
+          <div class="panel">
+            <h2>Autonomous Research Quick Action</h2>
+            <p>Launch an autonomous multi-stage research cycle (Observe &rarr; Hypothesize &rarr; Design &rarr; Validate &rarr; Execute &rarr; Verify &rarr; Store &rarr; Analyze &rarr; Decide):</p>
+            <div class="form-row">
+              <label>Target Rounds (1..64):</label>
+              <input type="number" id="quick-target-rounds" value="4" min="1" max="64">
+              <label>Solver:</label>
+              <select id="quick-solver">
+                <option value="cadical">CaDiCaL</option>
+                <option value="kissat">Kissat</option>
+                <option value="cryptominisat">CryptoMiniSat</option>
+                <option value="minisat">MiniSat</option>
+              </select>
+              <button class="btn btn-primary" id="btn-quick-campaign">Start Autonomous Cycle</button>
+            </div>
+            <div id="quick-campaign-result" class="result-box hidden"></div>
+          </div>
+
+          <div class="panel">
+            <h2>Trust Level Hierarchy (Epistemic State)</h2>
+            <ul class="trust-list">
+              <li><span class="badge badge-l0">L0</span> <strong>Model Suggestion</strong> &mdash; Untested hypothesis / speculative proposal</li>
+              <li><span class="badge badge-l1">L1</span> <strong>Unverified Observation</strong> &mdash; VLM visual scan / heuristic output</li>
+              <li><span class="badge badge-l2">L2</span> <strong>Experiment Output</strong> &mdash; Raw solver output prior to segregated verification</li>
+              <li><span class="badge badge-l3">L3</span> <strong>Independently Verified</strong> &mdash; Verified by isolated FIPS 180-4 reference engine</li>
+              <li><span class="badge badge-l4">L4</span> <strong>Reproduced</strong> &mdash; Deterministic re-execution matches identical state</li>
+              <li><span class="badge badge-l5">L5</span> <strong>Cross-Environment</strong> &mdash; Verified across CPU, GPU, and independent OS targets</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. Campaigns Tab -->
+      <section id="tab-campaigns" class="tab-pane">
+        <div class="panel">
+          <h2>Autonomous Cryptanalysis Campaigns</h2>
+          <p>The autonomous research orchestrator manages self-directed cryptanalysis loops while guaranteeing anti-clamping safety and verifiable audit logs.</p>
+          <div class="form-row">
+            <button class="btn btn-primary" id="btn-start-campaign">Start Campaign</button>
+            <button class="btn btn-danger" id="btn-stop-campaign">Pause / Stop Campaign</button>
+            <span id="campaign-status-label" class="badge badge-info">Status: Idle</span>
+          </div>
+          <div id="campaign-output-log" class="terminal-box">Waiting for campaign actions...</div>
+        </div>
+      </section>
+
+      <!-- 3. Experiments Tab -->
+      <section id="tab-experiments" class="tab-pane">
+        <div class="panel">
+          <div class="panel-header">
+            <h2>Experiments Registry</h2>
+            <button class="btn btn-secondary" id="btn-refresh-experiments">Refresh</button>
+          </div>
+          <table class="data-table" id="experiments-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Hypothesis</th>
+                <th>Rounds</th>
+                <th>Solver</th>
+                <th>Status</th>
+                <th>Outcome</th>
+                <th>Classification</th>
+                <th>Created</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td colspan="8">Loading experiments...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 4. Hypotheses Tab -->
+      <section id="tab-hypotheses" class="tab-pane">
+        <div class="panel">
+          <h2>Research Hypotheses</h2>
+          <div class="form-row">
+            <input type="text" id="new-hyp-title" placeholder="Hypothesis Title" style="flex: 2;">
+            <input type="text" id="new-hyp-desc" placeholder="Hypothesis Description" style="flex: 3;">
+            <button class="btn btn-primary" id="btn-create-hypothesis">Create Hypothesis</button>
+          </div>
+          <table class="data-table" id="hypotheses-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Title</th>
+                <th>Description</th>
+                <th>Falsification Criteria</th>
+                <th>Trust Level</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td colspan="6">Loading hypotheses...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 5. Models Tab -->
+      <section id="tab-models" class="tab-pane">
+        <div class="panel">
+          <h2>Local AI & VLM Models Runtime</h2>
+          <p>Local-first model runtime with conservative integrated-GPU memory budgets (load &rarr; use &rarr; unload).</p>
+          <table class="data-table" id="models-table">
+            <thead>
+              <tr>
+                <th>Model ID</th>
+                <th>Name</th>
+                <th>Class</th>
+                <th>Runtime</th>
+                <th>Backend</th>
+                <th>Size</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td colspan="8">Loading models...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 6. Evidence Store Tab -->
+      <section id="tab-evidence" class="tab-pane">
+        <div class="panel">
+          <h2>Auditable Evidence Packages & Artifacts</h2>
+          <p>Content-addressed storage with canonical SHA-256 hashes and deterministic evidence roots.</p>
+          <table class="data-table" id="evidence-table">
+            <thead>
+              <tr>
+                <th>SHA-256 Hash</th>
+                <th>Experiment ID</th>
+                <th>Relative Path</th>
+                <th>Size (Bytes)</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td colspan="5">Loading evidence...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 7. Verifier Tab -->
+      <section id="tab-verifier" class="tab-pane">
+        <div class="panel">
+          <h2>Independent Verification Gate</h2>
+          <p>Strict segregated FIPS 180-4 verification boundary. Eliminates common-mode failure.</p>
+          <div class="form-column">
+            <label>Message A (Hex):</label>
+            <input type="text" id="ver-msg-a" value="48656c6c6f2053484132353620576f726c6421" placeholder="Hex string">
+            <label>Message B (Hex):</label>
+            <input type="text" id="ver-msg-b" value="48656c6c6f2053484132353620576f726c6422" placeholder="Hex string">
+            <label>Rounds (1..64):</label>
+            <input type="number" id="ver-rounds" value="64" min="1" max="64">
+            <button class="btn btn-primary" id="btn-submit-verify">Submit to Independent Verifier</button>
+          </div>
+          <div id="verifier-verdict-box" class="result-box hidden"></div>
+        </div>
+      </section>
+
+      <!-- 8. Live Events Tab -->
+      <section id="tab-logs" class="tab-pane">
+        <div class="panel">
+          <h2>Live Platform Event Stream</h2>
+          <p>Streaming WebSocket events: tool calls, agent actions, state transitions, verifier outputs.</p>
+          <div id="live-events-box" class="terminal-box">Listening to WebSocket /ws/events...</div>
+        </div>
+      </section>
+
+      <!-- 9. Reports Tab -->
+      <section id="tab-reports" class="tab-pane">
+        <div class="panel">
+          <h2>Research Reports</h2>
+          <table class="data-table" id="reports-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Title</th>
+                <th>Type</th>
+                <th>File Path</th>
+                <th>Generated At</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td colspan="5">Loading reports...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
