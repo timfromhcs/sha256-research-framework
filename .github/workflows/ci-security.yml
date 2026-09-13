@@ -2,7 +2,7 @@ name: Security & Anti-Cheating Controls
 
 on:
   push:
-    branches: [ main, "feature/**" ]
+    branches: [ main, "feature/**", "dev/**" ]
   pull_request:
     branches: [ main ]
 

@@ -62,4 +62,10 @@ if ($LASTEXITCODE -ne 0) {
     throw "Python determinism tests failed with exit code $LASTEXITCODE"
 }
 
+Write-Host "Executing v3 Headless Research Platform Test Suite..." -ForegroundColor Cyan
+& python "$PSScriptRoot\..\tests\test_v3_platform.py"
+if ($LASTEXITCODE -ne 0) {
+    throw "v3 Platform tests failed with exit code $LASTEXITCODE"
+}
+
 Write-Host "All Tests Passed Successfully!" -ForegroundColor Green

@@ -200,6 +200,8 @@ class EvidenceStore:
         # 8. manifest.json
         manifest_data = {
             "experiment_id": experiment_id,
+            "start_time": request_data.get("created_at", created_at),
+            "end_time": created_at,
             "source_commit": source_commit,
             "created_at": created_at,
             "root_evidence_hash": root_evidence_hash,

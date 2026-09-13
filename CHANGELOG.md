@@ -2,6 +2,27 @@
 
 All notable changes to the SHA-256 Research Framework will be documented in this file.
 
+## [3.0.0] - 2026-09-13
+
+### Added
+- **Headless Local-First Autonomous Research Platform**: Complete transition to headless architecture exposing REST API and WebSocket live event streams, fully decoupled from user interfaces.
+- **Strict Epistemic Trust Model (L0-L5)**: Formal epistemic levels separating model hypotheses (L0), unverified observations (L1), experiment outputs (L2), independently verified results (L3), reproduced findings (L4), and cross-environment reproduced claims (L5). AI models are strictly prohibited from verifying cryptographic truth.
+- **Autonomous Research Campaign Loop**: 9-stage closed-loop orchestrator (`OBSERVE` -> `FORM HYPOTHESIS` -> `DESIGN EXPERIMENT` -> `VALIDATE PLAN` -> `EXECUTE` -> `VERIFY` -> `STORE EVIDENCE` -> `ANALYZE` -> `DECIDE NEXT STEP`).
+- **Tool-Restricted Agent Registry**: 17 validated sandboxed tools covering system telemetry, model management, hypothesis tracking, experiment dispatch, verification, artifact retrieval, evidence search, and automated reporting.
+- **Local Model Runtime & Task-Aware Routing**: Local inference runtime supporting GGUF/llama.cpp models with Vulkan acceleration and CPU fallback; integrated hardware probe, conservative iGPU shared memory budget, and strict single-model residency.
+- **Local Vision-Language Model (VLM) Analysis**: Structured visual interpretation of solver heatmaps and differential trails producing tamper-evident L1 observations.
+- **Local RAG & Epistemic Research Memory**: Lexical and semantic retrieval over codebase documentation, evidence manifests, and experiment outcomes with verification-status weighting.
+- **Asynchronous Worker Pool & Job Scheduling**: Non-blocking worker queue capturing exit codes, stdout/stderr, wall time, and generating automated evidence packages.
+- **Crash Recovery & Orphan Detection**: Automatic detection and recovery of dangling jobs (`RUNNING`, `PREPARING`, `VERIFYING`) upon platform reboot with deterministic recovery policies.
+- **Persistent SQLite Research State**: Comprehensive schema extension supporting 19 relational entities including projects, hypotheses, experiments, candidates, verifications, artifacts, models, agent actions, tool calls, observations, and benchmarks.
+- **Complete End-to-End Test Suite (`test_v3_platform.py`)**: 12 automated unit and integration tests verifying all architectural guarantees and anti-clamping contracts across every layer.
+- **Web Dashboard Client**: Modern, responsive web frontend consuming the REST API and live WebSocket feed without containing any cryptographic logic.
+
+### Changed
+- Decoupled `IndependentVerifier` into standalone static library target `sha256_verifier_core`, eliminating unnecessary dependencies on SAT/solvers and external components.
+- Recursively hardened anti-clamping across all C++ scalar engines, Vulkan compute pipelines, verifier APIs, worker queues, and REST endpoints. Invalid rounds (`rounds < 1 || rounds > 64`) are strictly rejected.
+- Standardized evidence packages to include environment specs, raw input/output logs, deterministic evidence root hashes, and verification manifests.
+
 ## [2.0.0] - 2026-09-11
 
 ### Added

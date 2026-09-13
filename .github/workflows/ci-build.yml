@@ -2,7 +2,7 @@ name: Build (Windows MSVC)
 
 on:
   push:
-    branches: [ main, "feature/**" ]
+    branches: [ main, "feature/**", "dev/**" ]
   pull_request:
     branches: [ main ]
 

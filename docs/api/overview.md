@@ -66,3 +66,34 @@ if (res.is_sat()) {
     auto message_words = SatEncoder::extract_message_from_model(res.model, encoding.message_vars);
 }
 ```
+
+---
+
+## v3.0 Headless REST API & WebSocket Streaming
+
+The platform provides a headless ASGI server (`sha256_research_platform.api.app`):
+
+### REST Endpoints
+- `GET  /api/status`: Platform status, active experiments, queue size, and hardware summary.
+- `GET  /api/system`: Hardware details (CPU cores, Vulkan capability, memory budget).
+- `GET  /api/models`: Enumerate registered LLM, VLM, and embedding model manifests.
+- `POST /api/models/{id}/load`: Load model with strict single-residency memory management.
+- `POST /api/models/{id}/unload`: Unload active model.
+- `GET  /api/hypotheses`: List research hypotheses with epistemic classification.
+- `POST /api/hypotheses`: Create research hypothesis.
+- `GET  /api/experiments`: List experiment lifecycle states.
+- `POST /api/experiments`: Enqueue experiment (`rounds`, `solver`, `backend`, `seed`, `timeout`). Anti-clamping enforced.
+- `GET  /api/experiments/{id}`: Detailed experiment run, candidate, and verification records.
+- `POST /api/experiments/{id}/cancel`: Cancel queued or running experiment.
+- `GET  /api/jobs`: List active and completed jobs.
+- `GET  /api/evidence`: Enumerate tamper-evident evidence packages.
+- `GET  /api/evidence/{id}`: Fetch evidence package manifest and artifacts.
+- `POST /api/verify`: Independent verification gateway for candidate preimages.
+- `GET  /api/reports`: List generated scientific markdown reports.
+- `POST /api/campaign/start`: Launch autonomous closed-loop research campaign.
+- `POST /api/campaign/stop`: Halt active research campaign.
+- `GET  /api/campaign/status`: Query autonomous research loop status and cycle counts.
+- `GET  /api/events`: Query recorded event stream.
+
+### Live WebSocket Event Feed
+- `WS /ws/events`: Real-time JSON event stream for live experiment state updates, agent tool calls, and verification results.

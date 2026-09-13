@@ -2,7 +2,7 @@ name: Documentation & Reproducibility Check
 
 on:
   push:
-    branches: [ main, "feature/**" ]
+    branches: [ main, "feature/**", "dev/**" ]
   pull_request:
     branches: [ main ]
 

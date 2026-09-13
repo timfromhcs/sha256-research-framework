@@ -1,4 +1,4 @@
-# SHA-256 Cryptanalysis Research Framework (v2.0.0)
+# SHA-256 Cryptanalysis Research Framework (v3.0.0)
 
 [![Build (Windows MSVC)](https://github.com/timfromhcs/sha256-research-framework/actions/workflows/ci-build.yml/badge.svg?branch=main)](https://github.com/timfromhcs/sha256-research-framework/actions/workflows/ci-build.yml)
 [![Tests (Windows)](https://github.com/timfromhcs/sha256-research-framework/actions/workflows/ci-test.yml/badge.svg?branch=main)](https://github.com/timfromhcs/sha256-research-framework/actions/workflows/ci-test.yml)
@@ -7,7 +7,7 @@
 [![Security & Anti-Cheating Controls](https://github.com/timfromhcs/sha256-research-framework/actions/workflows/ci-security.yml/badge.svg?branch=main)](https://github.com/timfromhcs/sha256-research-framework/actions/workflows/ci-security.yml)
 [![Documentation & Reproducibility Check](https://github.com/timfromhcs/sha256-research-framework/actions/workflows/ci-documentation.yml/badge.svg?branch=main)](https://github.com/timfromhcs/sha256-research-framework/actions/workflows/ci-documentation.yml)
 
-A reproducible, high-performance cryptographic research framework for Windows 11 with native CPU execution, Vulkan compute acceleration, WSL2 solver backends, SAT/SMT cryptanalysis, independent verification, and ML-guided search.
+A headless, local-first autonomous research platform for SHA-256 cryptanalysis with native CPU execution, Vulkan compute acceleration, SAT/SMT solvers, local LLM/VLM runtimes, tool-restricted autonomous agent orchestration, independent verification, and tamper-evident evidence packages.
 
 ---
 
@@ -16,6 +16,16 @@ A reproducible, high-performance cryptographic research framework for Windows 11
 > [!IMPORTANT]
 > **No standard full SHA-256 collision demonstrated.**
 > Full SHA-256 remains computationally secure and unbroken. All candidate preimages, differential trails, or collision claims are strictly validated by an independent reference verifier prior to acceptance.
+>
+> **Epistemic Trust Model (L0-L5)**:
+> - **L0**: Model Suggestion (Hypothesis)
+> - **L1**: Unverified Observation (Visual/Empirical)
+> - **L2**: Experiment Output (Solver Raw Result)
+> - **L3**: Independently Verified (Arbitrated by IndependentVerifier)
+> - **L4**: Reproduced (Locally replicated with identical parameters)
+> - **L5**: Cross-Environment Reproduced (Independently validated across platforms)
+>
+> Neither LLM, VLM, nor agent output is ever treated as cryptographic proof. Only the segregated `IndependentVerifier` arbitrates truth.
 
 - **Standard Full SHA-256 (64 rounds)**: **UNBROKEN**. No standard collision or full preimage has ever been discovered or claimed.
 - **Reduced-Round Demonstrations**: Inversions verified on toy/reduced rounds (e.g. 8-round CaDiCaL, 10-round Kissat) for research validation only.

@@ -2,7 +2,7 @@ name: Tests (Windows)
 
 on:
   push:
-    branches: [ main, "feature/**" ]
+    branches: [ main, "feature/**", "dev/**" ]
   pull_request:
     branches: [ main ]
 
@@ -16,6 +16,16 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Setup Python
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38
+        with:
+          python-version: "3.11"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install starlette uvicorn
 
       - name: Setup MSVC environment
         uses: ilammy/msvc-dev-cmd@a102174a2b586eec2ea151a69e6fd14404a8ce7c
@@ -46,3 +56,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "test_million_a failed with exit code $LASTEXITCODE" }
           & "$binDir\test_determinism.exe"
           if ($LASTEXITCODE -ne 0) { throw "test_determinism failed with exit code $LASTEXITCODE" }
+
+      - name: Execute v3 Headless Platform Tests
+        shell: pwsh
+        run: |
+          python tests/test_v3_platform.py
+          if ($LASTEXITCODE -ne 0) { throw "test_v3_platform failed with exit code $LASTEXITCODE" }

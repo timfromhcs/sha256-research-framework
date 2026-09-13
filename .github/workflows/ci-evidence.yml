@@ -2,7 +2,7 @@ name: Evidence Integrity & Anti-Tamper
 
 on:
   push:
-    branches: [ main, "feature/**" ]
+    branches: [ main, "feature/**", "dev/**" ]
   pull_request:
     branches: [ main ]
 
