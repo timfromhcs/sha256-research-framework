@@ -53,9 +53,11 @@ class TestV3Platform(unittest.TestCase):
         self.temp_dir = tempfile.mkdtemp(prefix="sha256_v3_test_")
         self.db_path = os.path.join(self.temp_dir, "test_kb.sqlite")
         self.evidence_dir = os.path.join(self.temp_dir, "evidence")
+        os.makedirs(self.evidence_dir, exist_ok=True)
         self.db = DatabaseManager(db_path=self.db_path)
+        self.evidence_store = EvidenceStore(base_dir=self.evidence_dir, db=self.db)
         self.runtime = LocalModelRuntime(db=self.db, models_dir=os.path.join(self.temp_dir, "models"))
-        self.worker_pool = ResearchWorkerPool(db=self.db, max_workers=2)
+        self.worker_pool = ResearchWorkerPool(db=self.db, max_workers=2, evidence_store=self.evidence_store)
         self.tools = ToolRegistry(db=self.db, runtime=self.runtime, worker_pool=self.worker_pool)
 
     def tearDown(self):
@@ -243,13 +245,10 @@ class TestV3Platform(unittest.TestCase):
         self.assertEqual(row["classification"], "ReducedRoundPreimageVerified")
 
         # Verify evidence package files
-        exp_dir = os.path.join("evidence", "experiments", exp_id)
+        exp_dir = os.path.join(self.evidence_dir, "experiments", exp_id)
         self.assertTrue(os.path.exists(exp_dir))
         for req_file in ["request.json", "environment.json", "stdout.log", "stderr.log", "result.json", "verification.json", "manifest.json", "report.md"]:
             self.assertTrue(os.path.exists(os.path.join(exp_dir, req_file)), f"Missing {req_file}")
-
-        # Clean up transient test evidence package so release manifest integrity stays clean
-        shutil.rmtree(exp_dir, ignore_errors=True)
 
     # 9. Test Agent Tool Registry & Sandboxing
     def test_09_agent_tool_registry_and_sandboxing(self):

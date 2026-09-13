@@ -23,9 +23,9 @@ from ..evidence.store import EvidenceStore
 class ResearchWorkerPool:
     """Manages asynchronous worker threads executing cryptanalysis jobs."""
 
-    def __init__(self, db: Optional[DatabaseManager] = None, max_workers: int = 2):
+    def __init__(self, db: Optional[DatabaseManager] = None, max_workers: int = 2, evidence_store: Optional[EvidenceStore] = None):
         self.db = db or DatabaseManager()
-        self.evidence_store = EvidenceStore(db=self.db)
+        self.evidence_store = evidence_store or EvidenceStore(db=self.db)
         self.max_workers = max_workers
         self.job_queue: queue.Queue[Dict[str, Any]] = queue.Queue()
         self.threads: List[threading.Thread] = []
@@ -217,7 +217,8 @@ class ResearchWorkerPool:
         stderr = ""
 
         if os.path.exists(exe_path):
-            cmd = [exe_path, "experiment", "run", str(rounds), solver]
+            out_dir = self.evidence_store.base_dir
+            cmd = [exe_path, "experiment", "run", str(rounds), solver, out_dir]
             try:
                 proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
                 exit_code = proc.returncode

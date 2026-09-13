@@ -163,7 +163,7 @@ int cmd_status() {
     return 0;
 }
 
-int cmd_experiment_run(int rounds, const std::string& solver_str) {
+int cmd_experiment_run(int rounds, const std::string& solver_str, const std::string& out_dir = "evidence") {
     std::cout << "[Experiment] Running automated cryptanalysis experiment: " << rounds << " rounds\n";
 
     SolverType st = SolverType::CaDiCaL;
@@ -190,7 +190,7 @@ int cmd_experiment_run(int rounds, const std::string& solver_str) {
         return std::string(buf);
     };
 
-    ExperimentStorage storage("evidence");
+    ExperimentStorage storage(out_dir);
     ExperimentMetadata meta;
     meta.experiment_id = ExperimentStorage::generate_experiment_id("exp_reduced");
     meta.target_rounds = static_cast<uint32_t>(rounds);
@@ -358,11 +358,13 @@ int main(int argc, char* argv[]) {
         if (argc >= 3 && std::string(argv[2]) == "run") {
             int rounds = 8;
             std::string solver = "cadical";
+            std::string out_dir = "evidence";
             if (argc >= 4) rounds = std::stoi(argv[3]);
             if (argc >= 5) solver = argv[4];
-            return cmd_experiment_run(rounds, solver);
+            if (argc >= 6) out_dir = argv[5];
+            return cmd_experiment_run(rounds, solver, out_dir);
         } else {
-            std::cout << "Usage: sha-research experiment run [rounds] [solver]\n";
+            std::cout << "Usage: sha-research experiment run [rounds] [solver] [out_dir]\n";
             return 0;
         }
     } else if (cmd == "campaign") {
