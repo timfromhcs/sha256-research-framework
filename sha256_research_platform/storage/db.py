@@ -346,7 +346,7 @@ class DatabaseManager:
                 "parameters": "TEXT",
                 "source_commit": "TEXT",
                 "environment": "TEXT",
-                "updated_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+                "updated_at": "TIMESTAMP"
             },
             "verifications": {
                 "experiment_id": "TEXT",

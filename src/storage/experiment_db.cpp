@@ -162,11 +162,18 @@ bool ExperimentStorage::finalize_experiment(
 
     auto json_escape = [](const std::string& s) {
         std::string o;
-        for (char c : s) {
-            if (c == '"' || c == '\\') { o += '\\'; o += c; }
+        for (unsigned char c : s) {
+            if (c == '"' || c == '\\') { o += '\\'; o += static_cast<char>(c); }
             else if (c == '\n') o += "\\n";
             else if (c == '\r') o += "\\r";
-            else o += c;
+            else if (c == '\t') o += "\\t";
+            else if (c < 32 || c >= 127) {
+                char hexbuf[8];
+                snprintf(hexbuf, sizeof(hexbuf), "\\u%04x", c);
+                o += hexbuf;
+            } else {
+                o += static_cast<char>(c);
+            }
         }
         return o;
     };
