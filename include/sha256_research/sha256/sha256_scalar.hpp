@@ -21,7 +21,7 @@ public:
 
     // Single-block compression function with configurable round count (1..64)
     // Supports standard IV or custom initial state
-    static void compress_block(Sha256State& state, const uint8_t block[64], uint32_t num_rounds = 64) noexcept;
+    static void compress_block(Sha256State& state, const uint8_t block[64], uint32_t num_rounds = 64);
 
     // Detailed compression function recording intermediate states (for cryptanalysis)
     struct RoundTrace {
@@ -29,7 +29,7 @@ public:
         std::array<Sha256State, 65> state_at_round{}; // state_at_round[0] is initial, [t] is after round t
     };
 
-    static RoundTrace compress_block_trace(const Sha256State& initial_state, const uint8_t block[64], uint32_t num_rounds = 64) noexcept;
+    static RoundTrace compress_block_trace(const Sha256State& initial_state, const uint8_t block[64], uint32_t num_rounds = 64);
 
     // Message schedule expansion
     static void expand_schedule(const uint8_t block[64], uint32_t W[64]) noexcept;

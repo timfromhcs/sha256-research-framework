@@ -62,7 +62,7 @@ public:
     // Fully independent FIPS 180-4 reference implementation
     // Segregated from Sha256Scalar to prevent common-mode failures
     static Sha256Digest independent_hash(const void* data, size_t len) noexcept;
-    static void independent_compress_block(Sha256State& state, const uint8_t block[64], uint32_t num_rounds = 64) noexcept;
+    static void independent_compress_block(Sha256State& state, const uint8_t block[64], uint32_t num_rounds = 64);
 
     // Negative verification test suite: tests known corrupted/altered inputs to confirm rejection
     static bool run_negative_verifier_tests();

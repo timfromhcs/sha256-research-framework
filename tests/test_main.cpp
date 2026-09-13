@@ -687,6 +687,62 @@ void test_sat_invalid_round_rejection() {
     if (!caught65) throw std::runtime_error("encode_reduced_rounds accepted 65 rounds");
 }
 
+void test_anti_clamping_api() {
+    uint8_t block[64] = {0};
+    Sha256State st = SHA256_IV;
+
+    // Sha256Scalar::compress_block
+    bool caught_s0 = false;
+    try {
+        Sha256Scalar::compress_block(st, block, 0);
+    } catch (const std::invalid_argument&) {
+        caught_s0 = true;
+    }
+    if (!caught_s0) throw std::runtime_error("Sha256Scalar::compress_block accepted 0 rounds");
+
+    bool caught_s65 = false;
+    try {
+        Sha256Scalar::compress_block(st, block, 65);
+    } catch (const std::invalid_argument&) {
+        caught_s65 = true;
+    }
+    if (!caught_s65) throw std::runtime_error("Sha256Scalar::compress_block accepted 65 rounds");
+
+    // Sha256Scalar::compress_block_trace
+    bool caught_t0 = false;
+    try {
+        Sha256Scalar::compress_block_trace(st, block, 0);
+    } catch (const std::invalid_argument&) {
+        caught_t0 = true;
+    }
+    if (!caught_t0) throw std::runtime_error("Sha256Scalar::compress_block_trace accepted 0 rounds");
+
+    bool caught_t65 = false;
+    try {
+        Sha256Scalar::compress_block_trace(st, block, 65);
+    } catch (const std::invalid_argument&) {
+        caught_t65 = true;
+    }
+    if (!caught_t65) throw std::runtime_error("Sha256Scalar::compress_block_trace accepted 65 rounds");
+
+    // IndependentVerifier::independent_compress_block
+    bool caught_v0 = false;
+    try {
+        IndependentVerifier::independent_compress_block(st, block, 0);
+    } catch (const std::invalid_argument&) {
+        caught_v0 = true;
+    }
+    if (!caught_v0) throw std::runtime_error("IndependentVerifier::independent_compress_block accepted 0 rounds");
+
+    bool caught_v65 = false;
+    try {
+        IndependentVerifier::independent_compress_block(st, block, 65);
+    } catch (const std::invalid_argument&) {
+        caught_v65 = true;
+    }
+    if (!caught_v65) throw std::runtime_error("IndependentVerifier::independent_compress_block accepted 65 rounds");
+}
+
 void test_independent_verifier_differential() {
     // Cross-verify IndependentVerifier::independent_hash vs Sha256Scalar and Sha256Optimized
     // on all NIST KATs
@@ -734,6 +790,7 @@ int main() {
     RUN_TEST(test_sat_sigma_gamma_semantics);
     RUN_TEST(test_sat_encoder_tseitin_basic);
     RUN_TEST(test_sat_invalid_round_rejection);
+    RUN_TEST(test_anti_clamping_api);
     RUN_TEST(test_sat_end_to_end_with_solver);
     RUN_TEST(test_independent_verifier_rejection_gate);
     RUN_TEST(test_independent_verifier_differential);

@@ -1,6 +1,7 @@
 #include "sha256_research/sha256/sha256_scalar.hpp"
 #include <algorithm>
 #include <cstring>
+#include <stdexcept>
 
 namespace sha256_research {
 
@@ -20,7 +21,11 @@ void Sha256Scalar::expand_schedule(const uint8_t block[64], uint32_t W[64]) noex
     }
 }
 
-void Sha256Scalar::compress_block(Sha256State& state, const uint8_t block[64], uint32_t num_rounds) noexcept {
+void Sha256Scalar::compress_block(Sha256State& state, const uint8_t block[64], uint32_t num_rounds) {
+    if (num_rounds < 1 || num_rounds > 64) {
+        throw std::invalid_argument("Invalid round count: num_rounds must be between 1 and 64");
+    }
+
     uint32_t W[64];
     expand_schedule(block, W);
 
@@ -33,7 +38,7 @@ void Sha256Scalar::compress_block(Sha256State& state, const uint8_t block[64], u
     uint32_t g = state[6];
     uint32_t h = state[7];
 
-    const uint32_t rounds = std::min(num_rounds, 64U);
+    const uint32_t rounds = num_rounds;
     for (uint32_t t = 0; t < rounds; ++t) {
         uint32_t t1 = h + sigma1(e) + ch(e, f, g) + SHA256_K[t] + W[t];
         uint32_t t2 = sigma0(a) + maj(a, b, c);
@@ -60,8 +65,12 @@ void Sha256Scalar::compress_block(Sha256State& state, const uint8_t block[64], u
 Sha256Scalar::RoundTrace Sha256Scalar::compress_block_trace(
     const Sha256State& initial_state,
     const uint8_t block[64],
-    uint32_t num_rounds) noexcept
+    uint32_t num_rounds)
 {
+    if (num_rounds < 1 || num_rounds > 64) {
+        throw std::invalid_argument("Invalid round count: num_rounds must be between 1 and 64");
+    }
+
     RoundTrace trace;
     expand_schedule(block, trace.W.data());
 
@@ -76,7 +85,7 @@ Sha256Scalar::RoundTrace Sha256Scalar::compress_block_trace(
 
     trace.state_at_round[0] = {a, b, c, d, e, f, g, h};
 
-    const uint32_t rounds = std::min(num_rounds, 64U);
+    const uint32_t rounds = num_rounds;
     for (uint32_t t = 0; t < rounds; ++t) {
         uint32_t t1 = h + sigma1(e) + ch(e, f, g) + SHA256_K[t] + trace.W[t];
         uint32_t t2 = sigma0(a) + maj(a, b, c);

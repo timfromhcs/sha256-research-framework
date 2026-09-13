@@ -1,8 +1,12 @@
 #include "sha256_research/verifier/verifier.hpp"
-#include "sha256_research/differential/diff_trail.hpp"
 #include <chrono>
 #include <iostream>
 #include <cstring>
+#include <stdexcept>
+
+#if defined(_MSC_VER)
+#include <intrin.h>
+#endif
 
 namespace sha256_research {
 
@@ -23,6 +27,22 @@ std::string to_string(CandidateClassification c) {
 }
 
 namespace {
+
+inline uint32_t indep_popcount32(uint32_t x) noexcept {
+#if defined(_MSC_VER)
+    return __popcnt(x);
+#else
+    return __builtin_popcount(x);
+#endif
+}
+
+inline uint32_t indep_hamming_distance(const Sha256Digest& d1, const Sha256Digest& d2) noexcept {
+    uint32_t dist = 0;
+    for (size_t i = 0; i < 32; ++i) {
+        dist += indep_popcount32(d1.bytes[i] ^ d2.bytes[i]);
+    }
+    return dist;
+}
 
 // Segregated independent FIPS 180-4 round constants K[0..63]
 constexpr uint32_t INDEP_K[64] = {
@@ -134,9 +154,11 @@ void indep_compress(uint32_t state[8], const uint8_t block[64], uint32_t rounds)
 
 } // namespace
 
-void IndependentVerifier::independent_compress_block(Sha256State& state, const uint8_t block[64], uint32_t num_rounds) noexcept {
-    uint32_t rounds = num_rounds > 64 ? 64 : num_rounds;
-    indep_compress(state.data(), block, rounds);
+void IndependentVerifier::independent_compress_block(Sha256State& state, const uint8_t block[64], uint32_t num_rounds) {
+    if (num_rounds < 1 || num_rounds > 64) {
+        throw std::invalid_argument("Invalid round count in independent_compress_block: must be between 1 and 64");
+    }
+    indep_compress(state.data(), block, num_rounds);
 }
 
 Sha256Digest IndependentVerifier::independent_hash(const void* data, size_t len) noexcept {
@@ -247,7 +269,7 @@ VerificationVerdict IndependentVerifier::verify_collision_candidate(const Collis
         verdict.digest_b = independent_hash(candidate.message_b.data(), candidate.message_b.size());
     }
 
-    verdict.hamming_distance = DifferentialAnalysis::hamming_distance(verdict.digest_a, verdict.digest_b);
+    verdict.hamming_distance = indep_hamming_distance(verdict.digest_a, verdict.digest_b);
 
     if (verdict.digest_a != verdict.digest_b) {
         verdict.is_valid = false;

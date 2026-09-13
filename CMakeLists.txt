@@ -75,9 +75,13 @@ target_link_libraries(sha-research PRIVATE sha256_core)
 add_executable(sha_tests tests/test_main.cpp)
 target_link_libraries(sha_tests PRIVATE sha256_core)
 
-# Standalone Verifier Executable
+# Standalone Independent Verifier Core (Segregated trust boundary; no SAT/solver/search/benchmarks)
+add_library(sha256_verifier_core STATIC src/verifier/verifier.cpp)
+target_include_directories(sha256_verifier_core PUBLIC include)
+
+# Standalone Verifier Executable (linked only to segregated verifier core)
 add_executable(sha-verifier verifier/standalone/main.cpp)
-target_link_libraries(sha-verifier PRIVATE sha256_core)
+target_link_libraries(sha-verifier PRIVATE sha256_verifier_core)
 
 # Dedicated NIST million 'a' test executable
 add_executable(test_million_a tests/test_million_a.cpp)

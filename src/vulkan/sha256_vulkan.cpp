@@ -154,7 +154,7 @@ bool Sha256VulkanEngine::compute_batch(
     std::vector<Sha256Digest>& out_digests,
     uint32_t num_rounds)
 {
-    if (!ready_ || count == 0) return false;
+    if (!ready_ || count == 0 || num_rounds < 1 || num_rounds > 64) return false;
 
     VkDevice dev = context_.device();
     out_digests.resize(count);
@@ -255,7 +255,7 @@ VulkanBenchmarkResult Sha256VulkanEngine::run_smoke_test(size_t test_count, uint
     res.rounds = num_rounds;
     res.device_name = context_.device_info().device_name;
 
-    if (!ready_) return res;
+    if (!ready_ || num_rounds < 1 || num_rounds > 64) return res;
 
     // Generate test input blocks with deterministic pseudo-random data
     std::vector<uint8_t> input_data(test_count * 64);
