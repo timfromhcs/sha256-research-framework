@@ -6,9 +6,13 @@ Detects CPU features, Vulkan compute devices, driver versions, and memory budget
 import os
 import platform
 import subprocess
-import psutil
 from dataclasses import dataclass, asdict
 from typing import Dict, Any, Optional, List
+
+try:
+    import psutil
+except ImportError:
+    psutil = None
 
 
 @dataclass
@@ -30,15 +34,47 @@ class HardwareProfile:
         return asdict(self)
 
 
+def _get_ram_info():
+    """Gets total and available RAM using psutil or ctypes / os fallback."""
+    if psutil is not None:
+        mem = psutil.virtual_memory()
+        return mem.total, mem.available
+
+    # Fallback using Windows ctypes or Unix sysconf
+    if os.name == 'nt':
+        import ctypes
+        from ctypes import wintypes
+
+        class MEMORYSTATUSEX(ctypes.Structure):
+            _fields_ = [
+                ("dwLength", wintypes.DWORD),
+                ("dwMemoryLoad", wintypes.DWORD),
+                ("ullTotalPhys", ctypes.c_uint64),
+                ("ullAvailPhys", ctypes.c_uint64),
+                ("ullTotalPageFile", ctypes.c_uint64),
+                ("ullAvailPageFile", ctypes.c_uint64),
+                ("ullTotalVirtual", ctypes.c_uint64),
+                ("ullAvailVirtual", ctypes.c_uint64),
+                ("sullAvailExtendedVirtual", ctypes.c_uint64),
+            ]
+
+        stat = MEMORYSTATUSEX()
+        stat.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stat)):
+            return stat.ullTotalPhys, stat.ullAvailPhys
+
+    # Generic fallback: 8GB default
+    default_bytes = 8 * 1024 * 1024 * 1024
+    return default_bytes, int(default_bytes * 0.5)
+
+
 def probe_hardware() -> HardwareProfile:
     """Probes system hardware, Vulkan devices, and computes memory budget."""
     cpu_model = platform.processor() or "Generic x86_64"
     cpu_cores = os.cpu_count() or 4
-    cpu_threads = psutil.cpu_count(logical=True) or cpu_cores
+    cpu_threads = psutil.cpu_count(logical=True) if psutil is not None else cpu_cores
 
-    mem = psutil.virtual_memory()
-    total_ram = mem.total
-    available_ram = mem.available
+    total_ram, available_ram = _get_ram_info()
 
     # Probe Vulkan
     vulkan_available = False
