@@ -30,5 +30,4 @@ __pycache__/
 # Temp files
 *.tmp
 *.log
-evidence/experiments/*/artifacts/*.cnf
-evidence/experiments/*/artifacts/*.dimacs
+hf_space/evidence/
