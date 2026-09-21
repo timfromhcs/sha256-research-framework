@@ -1,12 +1,25 @@
 {
-  "total_experiments": 2,
-  "successful_verifications": 2,
+  "total_experiments": 21,
+  "successful_verifications": 21,
   "failed_verifications": 0,
   "classifications": {
-    "ReducedRoundPreimageVerified": 2
+    "ReducedRoundPreimageVerified": 2,
+    "ReducedRoundPreimage": 19
   },
   "by_rounds": {
-    "8": 1,
-    "10": 1
+    "8": 3,
+    "10": 3,
+    "12": 2,
+    "14": 1,
+    "16": 1,
+    "1": 1,
+    "2": 1,
+    "3": 1,
+    "4": 3,
+    "5": 1,
+    "6": 1,
+    "7": 1,
+    "9": 1,
+    "11": 1
   }
 }

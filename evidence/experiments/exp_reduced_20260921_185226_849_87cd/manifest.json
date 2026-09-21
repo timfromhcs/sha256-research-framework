@@ -1,0 +1,51 @@
+{
+  "experiment_id": "exp_reduced_20260921_185226_849_87cd",
+  "parent_experiment": "",
+  "git_commit": "9eea58537f26a1cba9917a10695897e5381f5fc6",
+  "dirty_tree_state": "dirty",
+  "operating_system": "Windows",
+  "architecture": "x86_64",
+  "compiler": "MSVC",
+  "build_type": "Debug",
+  "detected_cpu_features": "SSE4.2: Yes, AVX: Yes, AVX2: Yes, BMI2: Yes, SHA-NI: Yes",
+  "vulkan_compiled_in": true,
+  "solver_name": "CaDiCaL",
+  "solver_version": "3.0.1",
+  "command": "sha-research experiment run 14 cadical | solver_cmd: wsl -d Ubuntu-22.04 -e timeout 60 cadical /mnt/c/Users/hcsme/AppData/Local/Temp/sha256_solver_CaDiCaL_1790009546961_10520_1/problem.cnf",
+  "deterministic_seed": 3237998081,
+  "input_parameters": {"rounds": 14, "solver": "CaDiCaL", "seed": 3235824897},
+  "start_time": "2026-09-21T16:52:26Z",
+  "end_time": "2026-09-21T16:52:27Z",
+  "result_status": "success",
+  "outcome_success": true,
+  "classification": "ReducedRoundPreimage",
+  "verification": {
+    "is_valid": true,
+    "verification_status": "independently_verified",
+    "classification": "ReducedRoundPreimage",
+    "failure_reason": "",
+    "actual_rounds": 14,
+    "digest_a": "8637bd61b8dcb9859521e5cd9d5b599e1c6281d2bba578b2b354f8e09fef0ac1",
+    "digest_b": "8637bd61b8dcb9859521e5cd9d5b599e1c6281d2bba578b2b354f8e09fef0ac1"
+  },
+  "artifacts": [
+    {
+      "path": "artifacts/problem.cnf",
+      "sha256": "32e473cf427e9da5f45a9eede2353d63188b2b24f17257923d6c2902c3e51539",
+      "size_bytes": 1172495,
+      "description": "SAT CNF for reduced-round preimage"
+    },
+    {
+      "path": "artifacts/solver_stdout.txt",
+      "sha256": "b46d07681d2df6971138211305bf2cadf8a3208dd3a967144d1a015e54a8febd",
+      "size_bytes": 88113,
+      "description": "Solver stdout capture"
+    },
+    {
+      "path": "artifacts/candidate_block.bin",
+      "sha256": "0296b1c63986da886bc3a2944ad8c1428bfc598ece92d9f627fea634398be330",
+      "size_bytes": 64,
+      "description": "Reconstructed candidate message block"
+    }
+  ]
+}

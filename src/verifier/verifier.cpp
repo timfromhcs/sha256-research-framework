@@ -22,6 +22,7 @@ std::string to_string(CandidateClassification c) {
         case CandidateClassification::DifferentialCharacteristic: return "DifferentialCharacteristic";
         case CandidateClassification::SolverModelOnly: return "SolverModelOnly";
         case CandidateClassification::StandardFullCollision: return "StandardFullCollision";
+        case CandidateClassification::StandardFullPreimage: return "StandardFullPreimage";
     }
     return "Unknown";
 }
@@ -302,6 +303,80 @@ VerificationVerdict IndependentVerifier::verify_collision_candidate(const Collis
     return verdict;
 }
 
+VerificationVerdict IndependentVerifier::verify_preimage_candidate(const PreimageCandidate& candidate) {
+    auto t0 = std::chrono::high_resolution_clock::now();
+    VerificationVerdict verdict;
+
+    // Reject malformed or impossible configurations explicitly (GEMINI.md requirement)
+    if (candidate.claimed_rounds == 0) {
+        verdict.actual_rounds = 0;
+        verdict.is_valid = false;
+        verdict.classification = CandidateClassification::Invalid;
+        verdict.failure_reason = "Invalid round count: claimed_rounds cannot be 0";
+        return verdict;
+    }
+
+    if (candidate.claimed_rounds > 64) {
+        verdict.actual_rounds = 64;
+        verdict.is_valid = false;
+        verdict.classification = CandidateClassification::Invalid;
+        verdict.failure_reason = "Invalid round count: claimed_rounds (" + std::to_string(candidate.claimed_rounds) + ") exceeds standard maximum 64";
+        return verdict;
+    }
+
+    const uint32_t eff_rounds = candidate.claimed_rounds;
+    verdict.actual_rounds = eff_rounds;
+    verdict.digest_b = candidate.target_digest;
+
+    if (candidate.message.empty()) {
+        verdict.is_valid = false;
+        verdict.classification = CandidateClassification::Invalid;
+        verdict.failure_reason = "Preimage candidate message is empty";
+        return verdict;
+    }
+
+    if (eff_rounds < 64 || candidate.custom_iv) {
+        if (candidate.message.size() != 64) {
+            verdict.is_valid = false;
+            verdict.classification = CandidateClassification::Invalid;
+            verdict.failure_reason = "Reduced-round / custom IV candidate must provide exact 64-byte block";
+            return verdict;
+        }
+
+        Sha256State state = candidate.iv;
+        independent_compress_block(state, candidate.message.data(), eff_rounds);
+
+        for (size_t i = 0; i < 8; ++i) {
+            indep_store_be32(verdict.digest_a.bytes.data() + i * 4, state[i]);
+        }
+    } else {
+        verdict.digest_a = independent_hash(candidate.message.data(), candidate.message.size());
+    }
+
+    verdict.hamming_distance = indep_hamming_distance(verdict.digest_a, verdict.digest_b);
+
+    if (verdict.digest_a != verdict.digest_b) {
+        verdict.is_valid = false;
+        verdict.classification = CandidateClassification::Invalid;
+        verdict.failure_reason = "Digest mismatch: computed hash does not match target (Hamming distance = " + std::to_string(verdict.hamming_distance) + ")";
+    } else {
+        verdict.is_valid = true;
+        if (eff_rounds == 64 && !candidate.custom_iv && candidate.iv == SHA256_IV) {
+            verdict.classification = CandidateClassification::StandardFullPreimage;
+        } else if (candidate.custom_iv || candidate.iv != SHA256_IV) {
+            verdict.classification = CandidateClassification::SemiFreeStartCollision;
+        } else if (eff_rounds < 64) {
+            verdict.classification = CandidateClassification::ReducedRoundPreimage;
+        }
+    }
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::micro> diff = t1 - t0;
+    verdict.verification_time_us = diff.count();
+
+    return verdict;
+}
+
 std::vector<IndependentVerifier::KnownAnswerVector> IndependentVerifier::get_standard_test_vectors() {
     return {
         {
@@ -375,6 +450,49 @@ bool IndependentVerifier::run_negative_verifier_tests() {
     auto v3 = verify_collision_candidate(cand3);
     if (v3.classification == CandidateClassification::StandardFullCollision) {
         std::cerr << "[IndependentVerifier] Negative test 3 failed: allowed custom IV as StandardFullCollision!\n";
+        return false;
+    }
+
+    // Negative test 4: Wrong preimage candidate -> MUST REJECT
+    PreimageCandidate p1;
+    p1.message.resize(64, 0x55);
+    p1.target_digest = Sha256Digest::from_hex("0000000000000000000000000000000000000000000000000000000000000000");
+    p1.claimed_rounds = 10;
+    auto vp1 = verify_preimage_candidate(p1);
+    if (vp1.is_valid || vp1.classification != CandidateClassification::Invalid) {
+        std::cerr << "[IndependentVerifier] Negative test 4 failed: accepted non-matching preimage!\n";
+        return false;
+    }
+
+    // Negative test 5: Zero-round preimage candidate -> MUST REJECT
+    PreimageCandidate p2;
+    p2.message.resize(64, 0x42);
+    p2.claimed_rounds = 0;
+    auto vp2 = verify_preimage_candidate(p2);
+    if (vp2.is_valid || vp2.classification != CandidateClassification::Invalid) {
+        std::cerr << "[IndependentVerifier] Negative test 5 failed: accepted 0 rounds preimage!\n";
+        return false;
+    }
+
+    // Negative test 6: Over-claimed rounds (>64) preimage -> MUST REJECT
+    PreimageCandidate p3;
+    p3.message.resize(64, 0x42);
+    p3.claimed_rounds = 100;
+    auto vp3 = verify_preimage_candidate(p3);
+    if (vp3.is_valid || vp3.classification != CandidateClassification::Invalid) {
+        std::cerr << "[IndependentVerifier] Negative test 6 failed: accepted >64 rounds preimage!\n";
+        return false;
+    }
+
+    // Negative test 7: Custom IV preimage claiming standard full preimage -> MUST NOT classify as StandardFullPreimage
+    PreimageCandidate p4;
+    p4.message.resize(64, 0x42);
+    p4.custom_iv = true;
+    p4.iv = {1, 2, 3, 4, 5, 6, 7, 8};
+    p4.claimed_rounds = 64;
+    auto vp4 = verify_preimage_candidate(p4);
+    if (vp4.classification == CandidateClassification::StandardFullPreimage) {
+        std::cerr << "[IndependentVerifier] Negative test 7 failed: allowed custom IV as StandardFullPreimage!\n";
         return false;
     }
 

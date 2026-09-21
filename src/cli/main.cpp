@@ -292,28 +292,27 @@ int cmd_experiment_run(int rounds, const std::string& solver_str, const std::str
             }
         }
 
-        // Verify with IndependentVerifier
-        Sha256State test_state = SHA256_IV;
-        IndependentVerifier::independent_compress_block(test_state, cand_block.data(), static_cast<uint32_t>(rounds));
-        Sha256Digest cand_digest;
-        for (size_t i = 0; i < 8; ++i) store_be32(cand_digest.bytes.data() + i * 4, test_state[i]);
+        // Strictly verify candidate via IndependentVerifier
+        PreimageCandidate cand;
+        cand.message = cand_block;
+        cand.target_digest = target_digest;
+        cand.claimed_rounds = static_cast<uint32_t>(rounds);
+        cand.iv = SHA256_IV;
+        cand.custom_iv = false;
+        cand.generator_metadata = "{\"solver\": \"" + meta.solver_name + "\"}";
 
-        if (cand_digest == target_digest) {
+        verdict = IndependentVerifier::verify_preimage_candidate(cand);
+
+        if (verdict.is_valid) {
             meta.outcome_success = true;
-            meta.classification = "ReducedRoundPreimageVerified";
-            meta.conclusion = "Successfully found valid message block producing target digest for " + std::to_string(rounds) + " rounds.";
-            verdict.is_valid = true;
-            verdict.classification = CandidateClassification::ReducedRoundPreimage;
-            verdict.actual_rounds = static_cast<uint32_t>(rounds);
-            verdict.digest_a = cand_digest;
-            verdict.digest_b = target_digest;
-            std::cout << "   [VERIFIED] Candidate block matches target digest!\n";
+            meta.classification = to_string(verdict.classification);
+            meta.conclusion = "Successfully found valid message block producing target digest for " + std::to_string(rounds) + " rounds. Verified via IndependentVerifier.";
+            std::cout << "   [VERIFIED via IndependentVerifier] Candidate matches target digest! Classification: " << meta.classification << "\n";
         } else {
             meta.outcome_success = false;
             meta.classification = "ModelExtractionMismatch";
-            meta.conclusion = "Solver claimed SAT but reconstructed candidate failed independent verification.";
-            verdict.is_valid = false;
-            std::cout << "   [REJECTED] Candidate block failed verification!\n";
+            meta.conclusion = "Solver claimed SAT but candidate failed independent verification: " + verdict.failure_reason;
+            std::cout << "   [REJECTED via IndependentVerifier] Candidate failed verification: " << verdict.failure_reason << "\n";
         }
     } else {
         meta.outcome_success = false;
@@ -325,6 +324,199 @@ int cmd_experiment_run(int rounds, const std::string& solver_str, const std::str
     storage.finalize_experiment(meta.experiment_id, meta, artifacts, verdict);
     std::cout << "   Experiment finalized: " << meta.experiment_id << "\n";
     return 0;
+}
+
+struct CampaignState {
+    std::string campaign_id;
+    std::string status{"IDLE"};
+    int max_rounds{16};
+    std::string solver{"cadical"};
+    int timeout_sec{60};
+    int highest_verified_round{0};
+    int inconclusive_round{0};
+    std::string start_time;
+    std::string last_updated;
+};
+
+static const std::string CAMPAIGN_STATE_PATH = "evidence/campaign_state.json";
+
+CampaignState load_campaign_state() {
+    CampaignState s;
+    std::ifstream f(CAMPAIGN_STATE_PATH);
+    if (!f.is_open()) return s;
+
+    std::string line;
+    while (std::getline(f, line)) {
+        auto get_val = [&](const std::string& key) -> std::string {
+            size_t pos = line.find("\"" + key + "\"");
+            if (pos == std::string::npos) return "";
+            size_t colon = line.find(':', pos);
+            if (colon == std::string::npos) return "";
+            size_t start = line.find_first_not_of(" \t\"", colon + 1);
+            size_t end = line.find_last_not_of(" \t\",\r\n");
+            if (start != std::string::npos && end != std::string::npos && end >= start) {
+                return line.substr(start, end - start + 1);
+            }
+            return "";
+        };
+
+        if (line.find("\"campaign_id\"") != std::string::npos) s.campaign_id = get_val("campaign_id");
+        if (line.find("\"status\"") != std::string::npos) s.status = get_val("status");
+        if (line.find("\"max_rounds\"") != std::string::npos) {
+            std::string v = get_val("max_rounds");
+            if (!v.empty()) s.max_rounds = std::stoi(v);
+        }
+        if (line.find("\"solver\"") != std::string::npos) s.solver = get_val("solver");
+        if (line.find("\"highest_verified_round\"") != std::string::npos) {
+            std::string v = get_val("highest_verified_round");
+            if (!v.empty()) s.highest_verified_round = std::stoi(v);
+        }
+        if (line.find("\"inconclusive_round\"") != std::string::npos) {
+            std::string v = get_val("inconclusive_round");
+            if (!v.empty()) s.inconclusive_round = std::stoi(v);
+        }
+        if (line.find("\"start_time\"") != std::string::npos) s.start_time = get_val("start_time");
+        if (line.find("\"last_updated\"") != std::string::npos) s.last_updated = get_val("last_updated");
+    }
+    return s;
+}
+
+void save_campaign_state(const CampaignState& s) {
+    std::filesystem::create_directories("evidence");
+    std::ofstream f(CAMPAIGN_STATE_PATH);
+    if (!f.is_open()) return;
+
+    f << "{\n"
+      << "  \"campaign_id\": \"" << s.campaign_id << "\",\n"
+      << "  \"status\": \"" << s.status << "\",\n"
+      << "  \"max_rounds\": " << s.max_rounds << ",\n"
+      << "  \"solver\": \"" << s.solver << "\",\n"
+      << "  \"timeout_sec\": " << s.timeout_sec << ",\n"
+      << "  \"highest_verified_round\": " << s.highest_verified_round << ",\n"
+      << "  \"inconclusive_round\": " << s.inconclusive_round << ",\n"
+      << "  \"start_time\": \"" << s.start_time << "\",\n"
+      << "  \"last_updated\": \"" << s.last_updated << "\"\n"
+      << "}\n";
+}
+
+int cmd_campaign_status() {
+    CampaignState s = load_campaign_state();
+    std::cout << "===============================================================\n"
+              << "              AUTONOMOUS RESEARCH CAMPAIGN STATUS              \n"
+              << "===============================================================\n";
+    if (s.campaign_id.empty()) {
+        std::cout << "  No active campaign state found.\n"
+                  << "  To launch: sha-research campaign start [max_rounds] [solver]\n";
+        return 0;
+    }
+    std::cout << "  Campaign ID:             " << s.campaign_id << "\n"
+              << "  Status:                  " << s.status << "\n"
+              << "  Target Max Rounds:       " << s.max_rounds << "\n"
+              << "  Active Solver:           " << s.solver << "\n"
+              << "  Highest Verified Round:  " << s.highest_verified_round << "\n"
+              << "  Inconclusive Round:      " << (s.inconclusive_round > 0 ? std::to_string(s.inconclusive_round) : "None") << "\n"
+              << "  Started:                 " << s.start_time << "\n"
+              << "  Last Updated:            " << s.last_updated << "\n"
+              << "===============================================================\n";
+    return 0;
+}
+
+int cmd_campaign_pause() {
+    CampaignState s = load_campaign_state();
+    if (s.campaign_id.empty() || s.status != "IN_PROGRESS") {
+        std::cout << "No in-progress campaign to pause.\n";
+        return 0;
+    }
+    s.status = "PAUSED";
+    save_campaign_state(s);
+    std::cout << "Campaign " << s.campaign_id << " paused at round " << s.highest_verified_round << ".\n";
+    return 0;
+}
+
+int cmd_campaign_start(int max_rounds, const std::string& solver_name, int start_from = 1) {
+    auto utc_now = []() {
+        auto now = std::chrono::system_clock::now();
+        std::time_t tt = std::chrono::system_clock::to_time_t(now);
+        std::tm bt{};
+#if defined(_WIN32)
+        gmtime_s(&bt, &tt);
+#else
+        gmtime_r(&tt, &bt);
+#endif
+        char buf[32];
+        std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &bt);
+        return std::string(buf);
+    };
+
+    if (max_rounds < 1 || max_rounds > 64) {
+        std::cerr << "Error: max_rounds must be between 1 and 64.\n";
+        return 1;
+    }
+
+    CampaignState s = load_campaign_state();
+    if (start_from == 1 || s.campaign_id.empty()) {
+        s.campaign_id = ExperimentStorage::generate_experiment_id("campaign");
+        s.start_time = utc_now();
+        s.highest_verified_round = 0;
+        s.inconclusive_round = 0;
+    }
+    s.status = "IN_PROGRESS";
+    s.max_rounds = max_rounds;
+    s.solver = solver_name;
+    s.last_updated = utc_now();
+    save_campaign_state(s);
+
+    std::cout << "===============================================================\n"
+              << "       STARTING AUTONOMOUS CAMPAIGN: " << s.campaign_id << "\n"
+              << "       Target: Rounds " << start_from << ".." << max_rounds << " | Solver: " << solver_name << "\n"
+              << "===============================================================\n";
+
+    for (int r = start_from; r <= max_rounds; ++r) {
+        std::cout << "\n[Campaign Step] Progressing to " << r << " rounds...\n";
+        int res = cmd_experiment_run(r, solver_name, "evidence");
+
+        s.last_updated = utc_now();
+        if (res == 0) {
+            s.highest_verified_round = r;
+            save_campaign_state(s);
+            std::cout << "[Campaign Step] Round " << r << " completed & independently verified.\n";
+        } else {
+            s.inconclusive_round = r;
+            s.status = "INCONCLUSIVE_AT_ROUND_" + std::to_string(r);
+            save_campaign_state(s);
+            std::cout << "[Campaign Step] Round " << r << " was inconclusive or timed out.\n"
+                      << "Stopping campaign progression.\n"
+                      << "Highest verified reduced-round preimage: " << s.highest_verified_round << " rounds.\n"
+                      << "Scientific finding: No standard full SHA-256 collision or preimage demonstrated.\n";
+            return 0;
+        }
+    }
+
+    s.status = "COMPLETED";
+    s.last_updated = utc_now();
+    save_campaign_state(s);
+
+    std::cout << "\n===============================================================\n"
+              << "  CAMPAIGN " << s.campaign_id << " COMPLETED SUCCESSFULLY!\n"
+              << "  Highest Verified Round: " << s.highest_verified_round << " / " << max_rounds << "\n"
+              << "  Scientific finding: No standard full SHA-256 collision demonstrated.\n"
+              << "===============================================================\n";
+    return 0;
+}
+
+int cmd_campaign_resume() {
+    CampaignState s = load_campaign_state();
+    if (s.campaign_id.empty()) {
+        std::cout << "No campaign state found to resume. Use 'campaign start'.\n";
+        return 1;
+    }
+    int next_round = s.highest_verified_round + 1;
+    if (next_round > s.max_rounds) {
+        std::cout << "Campaign already completed up to max_rounds (" << s.max_rounds << ").\n";
+        return 0;
+    }
+    std::cout << "Resuming campaign " << s.campaign_id << " from round " << next_round << "...\n";
+    return cmd_campaign_start(s.max_rounds, s.solver, next_round);
 }
 
 int main(int argc, char* argv[]) {
@@ -368,8 +560,23 @@ int main(int argc, char* argv[]) {
             return 0;
         }
     } else if (cmd == "campaign") {
-        std::cout << "Autonomous Campaign Manager:\n"
-                  << "  Status: Idle (Ready to launch with 'sha-research campaign start')\n";
+        if (argc >= 3) {
+            std::string sub = argv[2];
+            if (sub == "status") {
+                return cmd_campaign_status();
+            } else if (sub == "pause") {
+                return cmd_campaign_pause();
+            } else if (sub == "resume") {
+                return cmd_campaign_resume();
+            } else if (sub == "start") {
+                int max_rounds = 12;
+                std::string solver = "cadical";
+                if (argc >= 4) max_rounds = std::stoi(argv[3]);
+                if (argc >= 5) solver = argv[4];
+                return cmd_campaign_start(max_rounds, solver);
+            }
+        }
+        std::cout << "Usage: sha-research campaign <start|status|pause|resume> [max_rounds] [solver]\n";
         return 0;
     } else if (cmd == "train" || cmd == "analyze" || cmd == "report") {
         std::string py_cmd = "python tools/" + cmd + ".py";

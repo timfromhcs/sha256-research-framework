@@ -1,0 +1,11 @@
+{
+  "campaign_id": "campaign_20260921_185232_780_1a2c",
+  "status": "COMPLETED",
+  "max_rounds": 12,
+  "solver": "cadical",
+  "timeout_sec": 30,
+  "highest_verified_round": 12,
+  "inconclusive_round": 0,
+  "start_time": "2026-09-21T16:52:32Z",
+  "last_updated": "2026-09-21T16:52:38Z"
+}

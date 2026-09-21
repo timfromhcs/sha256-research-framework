@@ -21,3 +21,4 @@ CMakeLists.txt text eol=lf
 *.exe binary
 *.dll binary
 *.sqlite binary
+evidence/**/artifacts/* -text

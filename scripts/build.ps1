@@ -20,7 +20,7 @@ if ($Clean -and (Test-Path $buildDir)) {
     Remove-Item -Recurse -Force $buildDir
 }
 
-if (-not (Test-Path $buildDir)) {
+if (-not (Test-Path "$buildDir\CMakeCache.txt")) {
     Write-Host "Configuring CMake..." -ForegroundColor Yellow
     if ($Generator -ne "") {
         & cmake -B $buildDir -G $Generator

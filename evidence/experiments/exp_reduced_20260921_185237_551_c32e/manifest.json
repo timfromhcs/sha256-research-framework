@@ -1,0 +1,51 @@
+{
+  "experiment_id": "exp_reduced_20260921_185237_551_c32e",
+  "parent_experiment": "",
+  "git_commit": "9eea58537f26a1cba9917a10695897e5381f5fc6",
+  "dirty_tree_state": "dirty",
+  "operating_system": "Windows",
+  "architecture": "x86_64",
+  "compiler": "MSVC",
+  "build_type": "Debug",
+  "detected_cpu_features": "SSE4.2: Yes, AVX: Yes, AVX2: Yes, BMI2: Yes, SHA-NI: Yes",
+  "vulkan_compiled_in": true,
+  "solver_name": "CaDiCaL",
+  "solver_version": "3.0.1",
+  "command": "sha-research experiment run 11 cadical | solver_cmd: wsl -d Ubuntu-22.04 -e timeout 60 cadical /mnt/c/Users/hcsme/AppData/Local/Temp/sha256_solver_CaDiCaL_1790009557662_7704_31/problem.cnf",
+  "deterministic_seed": 3237998081,
+  "input_parameters": {"rounds": 11, "solver": "CaDiCaL", "seed": 3235824897},
+  "start_time": "2026-09-21T16:52:37Z",
+  "end_time": "2026-09-21T16:52:37Z",
+  "result_status": "success",
+  "outcome_success": true,
+  "classification": "ReducedRoundPreimage",
+  "verification": {
+    "is_valid": true,
+    "verification_status": "independently_verified",
+    "classification": "ReducedRoundPreimage",
+    "failure_reason": "",
+    "actual_rounds": 11,
+    "digest_a": "62154acb163813bb476b71716bfb122c951c902779cdbbad9dee0ca8428bd111",
+    "digest_b": "62154acb163813bb476b71716bfb122c951c902779cdbbad9dee0ca8428bd111"
+  },
+  "artifacts": [
+    {
+      "path": "artifacts/problem.cnf",
+      "sha256": "cc578bcdd882139745a950fb9e3bcc26bcd3801da8154d4a6bdf6b3cd6e6776c",
+      "size_bytes": 912237,
+      "description": "SAT CNF for reduced-round preimage"
+    },
+    {
+      "path": "artifacts/solver_stdout.txt",
+      "sha256": "32658d94b1ace66ab72c9926e0afaf98bbbe3dcb6e4fbfa4b1342001549a9a46",
+      "size_bytes": 70012,
+      "description": "Solver stdout capture"
+    },
+    {
+      "path": "artifacts/candidate_block.bin",
+      "sha256": "a481a09966ab405e2746b3e10218473b761cf8fdf84eeb2ae171abe6235d26cf",
+      "size_bytes": 64,
+      "description": "Reconstructed candidate message block"
+    }
+  ]
+}

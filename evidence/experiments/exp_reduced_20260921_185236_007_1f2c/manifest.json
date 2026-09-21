@@ -1,0 +1,51 @@
+{
+  "experiment_id": "exp_reduced_20260921_185236_007_1f2c",
+  "parent_experiment": "",
+  "git_commit": "9eea58537f26a1cba9917a10695897e5381f5fc6",
+  "dirty_tree_state": "dirty",
+  "operating_system": "Windows",
+  "architecture": "x86_64",
+  "compiler": "MSVC",
+  "build_type": "Debug",
+  "detected_cpu_features": "SSE4.2: Yes, AVX: Yes, AVX2: Yes, BMI2: Yes, SHA-NI: Yes",
+  "vulkan_compiled_in": true,
+  "solver_name": "CaDiCaL",
+  "solver_version": "3.0.1",
+  "command": "sha-research experiment run 8 cadical | solver_cmd: wsl -d Ubuntu-22.04 -e timeout 60 cadical /mnt/c/Users/hcsme/AppData/Local/Temp/sha256_solver_CaDiCaL_1790009556114_7704_22/problem.cnf",
+  "deterministic_seed": 3237998081,
+  "input_parameters": {"rounds": 8, "solver": "CaDiCaL", "seed": 3235824897},
+  "start_time": "2026-09-21T16:52:36Z",
+  "end_time": "2026-09-21T16:52:36Z",
+  "result_status": "success",
+  "outcome_success": true,
+  "classification": "ReducedRoundPreimage",
+  "verification": {
+    "is_valid": true,
+    "verification_status": "independently_verified",
+    "classification": "ReducedRoundPreimage",
+    "failure_reason": "",
+    "actual_rounds": 8,
+    "digest_a": "30b5035950f51c6423c51413da9c10a937b956771f8036f57ee8c7006680c686",
+    "digest_b": "30b5035950f51c6423c51413da9c10a937b956771f8036f57ee8c7006680c686"
+  },
+  "artifacts": [
+    {
+      "path": "artifacts/problem.cnf",
+      "sha256": "032b41f7932e0a7a04d4ce8e278507a8cded953b843eab241f765305354436b6",
+      "size_bytes": 671128,
+      "description": "SAT CNF for reduced-round preimage"
+    },
+    {
+      "path": "artifacts/solver_stdout.txt",
+      "sha256": "fbf410ae9962bbf099d42bdd8ae351f393a8042b246a4ba8c8ea328dc87a8a3a",
+      "size_bytes": 53506,
+      "description": "Solver stdout capture"
+    },
+    {
+      "path": "artifacts/candidate_block.bin",
+      "sha256": "6a4dd844567c20b09ba5abac5abcb9fbd5e6836813488bb16adf509a135d6be7",
+      "size_bytes": 64,
+      "description": "Reconstructed candidate message block"
+    }
+  ]
+}

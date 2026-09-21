@@ -1,0 +1,51 @@
+{
+  "experiment_id": "exp_reduced_20260921_190143_370_dd82",
+  "parent_experiment": "",
+  "git_commit": "44096110428c11c62ac02d336d25170b1c364a9c",
+  "dirty_tree_state": "dirty",
+  "operating_system": "Windows",
+  "architecture": "x86_64",
+  "compiler": "MSVC",
+  "build_type": "Debug",
+  "detected_cpu_features": "SSE4.2: Yes, AVX: Yes, AVX2: Yes, BMI2: Yes, SHA-NI: Yes",
+  "vulkan_compiled_in": true,
+  "solver_name": "CaDiCaL",
+  "solver_version": "3.0.1",
+  "command": "sha-research experiment run 4 cadical | solver_cmd: wsl -d Ubuntu-22.04 -e timeout 60 cadical /mnt/c/Users/hcsme/AppData/Local/Temp/sha256_solver_CaDiCaL_1790010117346_5132_1/problem.cnf",
+  "deterministic_seed": 3237998081,
+  "input_parameters": {"rounds": 4, "solver": "CaDiCaL", "seed": 3235824897},
+  "start_time": "2026-09-21T17:01:43Z",
+  "end_time": "2026-09-21T17:01:57Z",
+  "result_status": "success",
+  "outcome_success": true,
+  "classification": "ReducedRoundPreimage",
+  "verification": {
+    "is_valid": true,
+    "verification_status": "independently_verified",
+    "classification": "ReducedRoundPreimage",
+    "failure_reason": "",
+    "actual_rounds": 4,
+    "digest_a": "fd7e80a686015e426e216bd3f59dd0db93fc0f7c6a78352054dfe51248ee030f",
+    "digest_b": "fd7e80a686015e426e216bd3f59dd0db93fc0f7c6a78352054dfe51248ee030f"
+  },
+  "artifacts": [
+    {
+      "path": "artifacts/problem.cnf",
+      "sha256": "3fb1896cb2ea0da249f601d2ed58cea9f426617dbde85fb9cd59377501811060",
+      "size_bytes": 368915,
+      "description": "SAT CNF for reduced-round preimage"
+    },
+    {
+      "path": "artifacts/solver_stdout.txt",
+      "sha256": "e7e956a5e6a049a49bba8e46eb378999c392fc8f4c952923679d0a89ee0dfd30",
+      "size_bytes": 33281,
+      "description": "Solver stdout capture"
+    },
+    {
+      "path": "artifacts/candidate_block.bin",
+      "sha256": "6a4dd844567c20b09ba5abac5abcb9fbd5e6836813488bb16adf509a135d6be7",
+      "size_bytes": 64,
+      "description": "Reconstructed candidate message block"
+    }
+  ]
+}

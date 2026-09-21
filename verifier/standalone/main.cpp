@@ -23,6 +23,7 @@ int main(int argc, char* argv[]) {
                   << "  test-vectors           Verify standard NIST FIPS 180-4 test vectors\n"
                   << "  test-negative          Execute hostile anti-cheating rejection tests\n"
                   << "  verify-pair <m1> <m2>  Verify collision candidate from two hex strings\n"
+                  << "  verify-preimage <m> <t> Verify preimage candidate against target digest\n"
                   << "  tamper-check <file>    Verify SHA-256 digest of specified evidence file\n";
         return 0;
     }
@@ -82,6 +83,43 @@ int main(int argc, char* argv[]) {
                   << "  Failure Reason: " << verdict.failure_reason << "\n"
                   << "  Digest A: " << verdict.digest_a.to_hex() << "\n"
                   << "  Digest B: " << verdict.digest_b.to_hex() << "\n"
+                  << "  Hamming Distance: " << verdict.hamming_distance << "\n";
+
+        return verdict.is_valid ? 0 : 1;
+    }
+
+    if (cmd == "verify-preimage") {
+        if (argc < 4) {
+            std::cerr << "Usage: sha-verifier verify-preimage <hex_msg> <hex_target> [rounds]\n";
+            return 1;
+        }
+        std::string hex_msg = argv[2];
+        std::string hex_target = argv[3];
+        uint32_t rounds = 64;
+        if (argc >= 5) rounds = std::stoul(argv[4]);
+
+        auto parse_hex = [](const std::string& h) {
+            std::vector<uint8_t> bytes;
+            for (size_t i = 0; i + 1 < h.size(); i += 2) {
+                bytes.push_back(static_cast<uint8_t>(std::stoul(h.substr(i, 2), nullptr, 16)));
+            }
+            return bytes;
+        };
+
+        PreimageCandidate cand;
+        cand.message = parse_hex(hex_msg);
+        cand.target_digest = Sha256Digest::from_hex(hex_target);
+        cand.claimed_rounds = rounds;
+        cand.iv = SHA256_IV;
+        cand.custom_iv = false;
+
+        auto verdict = IndependentVerifier::verify_preimage_candidate(cand);
+        std::cout << "Preimage Verification Verdict:\n"
+                  << "  Is Valid: " << (verdict.is_valid ? "YES" : "NO") << "\n"
+                  << "  Classification: " << to_string(verdict.classification) << "\n"
+                  << "  Failure Reason: " << verdict.failure_reason << "\n"
+                  << "  Computed Digest: " << verdict.digest_a.to_hex() << "\n"
+                  << "  Target Digest:   " << verdict.digest_b.to_hex() << "\n"
                   << "  Hamming Distance: " << verdict.hamming_distance << "\n";
 
         return verdict.is_valid ? 0 : 1;

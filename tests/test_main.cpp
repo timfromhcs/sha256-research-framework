@@ -773,6 +773,37 @@ void test_independent_verifier_differential() {
     }
 }
 
+void test_independent_verifier_preimage_gate() {
+    // Generate valid 8-round candidate
+    PreimageCandidate cand;
+    cand.message.resize(64);
+    for (size_t i = 0; i < 64; ++i) cand.message[i] = static_cast<uint8_t>(i ^ 0x5A);
+    cand.claimed_rounds = 8;
+    cand.iv = SHA256_IV;
+    cand.custom_iv = false;
+
+    Sha256State st = SHA256_IV;
+    IndependentVerifier::independent_compress_block(st, cand.message.data(), 8);
+    for (size_t i = 0; i < 8; ++i) {
+        cand.target_digest.bytes[i * 4 + 0] = static_cast<uint8_t>(st[i] >> 24);
+        cand.target_digest.bytes[i * 4 + 1] = static_cast<uint8_t>(st[i] >> 16);
+        cand.target_digest.bytes[i * 4 + 2] = static_cast<uint8_t>(st[i] >> 8);
+        cand.target_digest.bytes[i * 4 + 3] = static_cast<uint8_t>(st[i]);
+    }
+
+    auto v_valid = IndependentVerifier::verify_preimage_candidate(cand);
+    if (!v_valid.is_valid || v_valid.classification != CandidateClassification::ReducedRoundPreimage) {
+        throw std::runtime_error("Valid preimage candidate rejected by IndependentVerifier");
+    }
+
+    // Tamper with target digest
+    cand.target_digest.bytes[0] ^= 0xFF;
+    auto v_invalid = IndependentVerifier::verify_preimage_candidate(cand);
+    if (v_invalid.is_valid || v_invalid.classification != CandidateClassification::Invalid) {
+        throw std::runtime_error("Tampered target preimage accepted by IndependentVerifier");
+    }
+}
+
 int main() {
     std::cout << "===============================================================\n"
               << "            SHA-256 Framework Test Suite                       \n"
@@ -794,6 +825,7 @@ int main() {
     RUN_TEST(test_sat_end_to_end_with_solver);
     RUN_TEST(test_independent_verifier_rejection_gate);
     RUN_TEST(test_independent_verifier_differential);
+    RUN_TEST(test_independent_verifier_preimage_gate);
     RUN_TEST(test_verifier_metadata_forgery);
     RUN_TEST(test_primitive_exhaustive);
     RUN_TEST(test_concurrency_hash_batch);

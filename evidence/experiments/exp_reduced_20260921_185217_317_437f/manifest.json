@@ -1,0 +1,51 @@
+{
+  "experiment_id": "exp_reduced_20260921_185217_317_437f",
+  "parent_experiment": "",
+  "git_commit": "9eea58537f26a1cba9917a10695897e5381f5fc6",
+  "dirty_tree_state": "dirty",
+  "operating_system": "Windows",
+  "architecture": "x86_64",
+  "compiler": "MSVC",
+  "build_type": "Debug",
+  "detected_cpu_features": "SSE4.2: Yes, AVX: Yes, AVX2: Yes, BMI2: Yes, SHA-NI: Yes",
+  "vulkan_compiled_in": true,
+  "solver_name": "Kissat",
+  "solver_version": "4.0.4",
+  "command": "sha-research experiment run 10 kissat | solver_cmd: wsl -d Ubuntu-22.04 -e timeout 60 kissat /mnt/c/Users/hcsme/AppData/Local/Temp/sha256_solver_Kissat_1790009540430_18604_1/problem.cnf",
+  "deterministic_seed": 3237998081,
+  "input_parameters": {"rounds": 10, "solver": "Kissat", "seed": 3235824897},
+  "start_time": "2026-09-21T16:52:17Z",
+  "end_time": "2026-09-21T16:52:20Z",
+  "result_status": "success",
+  "outcome_success": true,
+  "classification": "ReducedRoundPreimage",
+  "verification": {
+    "is_valid": true,
+    "verification_status": "independently_verified",
+    "classification": "ReducedRoundPreimage",
+    "failure_reason": "",
+    "actual_rounds": 10,
+    "digest_a": "c4da4b9dc6642c84031a10643add63192fd6a5a0196f9b89062edda3e05b9b82",
+    "digest_b": "c4da4b9dc6642c84031a10643add63192fd6a5a0196f9b89062edda3e05b9b82"
+  },
+  "artifacts": [
+    {
+      "path": "artifacts/problem.cnf",
+      "sha256": "309626b3a9102768eb34214dfd5558de8fa383add88f85d8475c4b8425e2450a",
+      "size_bytes": 827531,
+      "description": "SAT CNF for reduced-round preimage"
+    },
+    {
+      "path": "artifacts/solver_stdout.txt",
+      "sha256": "74209332e5566b36f245bfed85ffea7a78a543587953b78932b241c29e5ca5d5",
+      "size_bytes": 62635,
+      "description": "Solver stdout capture"
+    },
+    {
+      "path": "artifacts/candidate_block.bin",
+      "sha256": "effd3267cddb1065a5184db77c3c8306acf59ee01e6251b24465bea2071ecdbc",
+      "size_bytes": 64,
+      "description": "Reconstructed candidate message block"
+    }
+  ]
+}

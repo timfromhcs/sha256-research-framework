@@ -175,6 +175,85 @@ int main() {
         }
     }
 
+    // Test 9: Preimage candidate 1-bit tampering detection
+    total++;
+    std::cout << "[Test 9] Preimage candidate 1-bit tampering detection... ";
+    {
+        PreimageCandidate cand;
+        cand.message.resize(64, 0xAA);
+        cand.claimed_rounds = 16;
+        cand.iv = SHA256_IV;
+        cand.custom_iv = false;
+
+        // Compute genuine 16-round digest
+        Sha256State st = SHA256_IV;
+        IndependentVerifier::independent_compress_block(st, cand.message.data(), 16);
+        for (size_t i = 0; i < 8; ++i) {
+            cand.target_digest.bytes[i * 4 + 0] = static_cast<uint8_t>(st[i] >> 24);
+            cand.target_digest.bytes[i * 4 + 1] = static_cast<uint8_t>(st[i] >> 16);
+            cand.target_digest.bytes[i * 4 + 2] = static_cast<uint8_t>(st[i] >> 8);
+            cand.target_digest.bytes[i * 4 + 3] = static_cast<uint8_t>(st[i]);
+        }
+
+        // Tamper 1 byte of message
+        cand.message[0] ^= 0x01;
+
+        auto verdict = IndependentVerifier::verify_preimage_candidate(cand);
+        if (!verdict.is_valid && verdict.classification == CandidateClassification::Invalid) {
+            passed++;
+            std::cout << "PASSED (Tampered preimage rejected)\n";
+        } else {
+            std::cout << "FAILED (Accepted tampered preimage)\n";
+        }
+    }
+
+    // Test 10: Preimage custom-IV misclassification prevention
+    total++;
+    std::cout << "[Test 10] Preimage custom-IV misclassification prevention... ";
+    {
+        PreimageCandidate cand;
+        cand.message.resize(64, 0x42);
+        cand.claimed_rounds = 64;
+        cand.custom_iv = true;
+        cand.iv = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08};
+
+        Sha256State st = cand.iv;
+        IndependentVerifier::independent_compress_block(st, cand.message.data(), 64);
+        for (size_t i = 0; i < 8; ++i) {
+            cand.target_digest.bytes[i * 4 + 0] = static_cast<uint8_t>(st[i] >> 24);
+            cand.target_digest.bytes[i * 4 + 1] = static_cast<uint8_t>(st[i] >> 16);
+            cand.target_digest.bytes[i * 4 + 2] = static_cast<uint8_t>(st[i] >> 8);
+            cand.target_digest.bytes[i * 4 + 3] = static_cast<uint8_t>(st[i]);
+        }
+
+        auto verdict = IndependentVerifier::verify_preimage_candidate(cand);
+        if (verdict.is_valid && verdict.classification != CandidateClassification::StandardFullPreimage) {
+            passed++;
+            std::cout << "PASSED (Prevented mislabeling custom-IV as full preimage)\n";
+        } else {
+            std::cout << "FAILED (Misclassified custom-IV preimage as standard full preimage)\n";
+        }
+    }
+
+    // Test 11: Preimage forged metadata authority rejection
+    total++;
+    std::cout << "[Test 11] Preimage forged metadata authority rejection... ";
+    {
+        PreimageCandidate cand;
+        cand.message.resize(64, 0x55);
+        cand.target_digest = Sha256Digest::from_hex("0000000000000000000000000000000000000000000000000000000000000000");
+        cand.claimed_rounds = 64;
+        cand.generator_metadata = "{\"verified\": true, \"status\": \"CONFIRMED\", \"classification\": \"StandardFullPreimage\"}";
+
+        auto verdict = IndependentVerifier::verify_preimage_candidate(cand);
+        if (!verdict.is_valid && verdict.classification != CandidateClassification::StandardFullPreimage) {
+            passed++;
+            std::cout << "PASSED (Metadata override attempt on preimage defeated)\n";
+        } else {
+            std::cout << "FAILED (Metadata permitted forged preimage to pass)\n";
+        }
+    }
+
     std::cout << "===============================================================\n"
               << "  Adversarial Results: " << passed << " / " << total << " passed\n"
               << "===============================================================\n";

@@ -17,7 +17,8 @@ enum class CandidateClassification {
     NearCollision,
     DifferentialCharacteristic,
     SolverModelOnly,
-    StandardFullCollision
+    StandardFullCollision,
+    StandardFullPreimage
 };
 
 std::string to_string(CandidateClassification c);
@@ -25,6 +26,15 @@ std::string to_string(CandidateClassification c);
 struct CollisionCandidate {
     std::vector<uint8_t> message_a;
     std::vector<uint8_t> message_b;
+    Sha256State iv{SHA256_IV};
+    bool custom_iv{false};
+    uint32_t claimed_rounds{64};
+    std::string generator_metadata;
+};
+
+struct PreimageCandidate {
+    std::vector<uint8_t> message;
+    Sha256Digest target_digest;
     Sha256State iv{SHA256_IV};
     bool custom_iv{false};
     uint32_t claimed_rounds{64};
@@ -48,6 +58,9 @@ public:
 
     // Strict verification of collision candidate
     static VerificationVerdict verify_collision_candidate(const CollisionCandidate& candidate);
+
+    // Strict verification of preimage candidate
+    static VerificationVerdict verify_preimage_candidate(const PreimageCandidate& candidate);
 
     // Verify known-answer test vectors (NIST CAVP / FIPS 180-4 standard vectors)
     struct KnownAnswerVector {
