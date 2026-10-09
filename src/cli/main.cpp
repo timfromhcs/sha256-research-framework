@@ -163,17 +163,42 @@ int cmd_status() {
     return 0;
 }
 
-int cmd_experiment_run(int rounds, const std::string& solver_str, const std::string& out_dir = "evidence") {
+// ---------------------------------------------------------------------------
+// Experiment options, shared by `experiment run` and the richer `preimage`
+// command. The encoding dialect is a first-class, recorded choice because it
+// dominates solver performance on this circuit.
+// ---------------------------------------------------------------------------
+static std::string dialect_name(EncodingDialect d) {
+    return d == EncodingDialect::Xor ? "xor" : "tseitin";
+}
+
+int cmd_experiment_run(int rounds, const std::string& solver_str, const std::string& out_dir,
+                       EncodingDialect dialect, bool carry_save, uint32_t timeout_seconds) {
     std::cout << "[Experiment] Running automated cryptanalysis experiment: " << rounds << " rounds\n";
 
     SolverType st = SolverType::CaDiCaL;
     if (solver_str == "kissat") st = SolverType::Kissat;
-    else if (solver_str == "cryptominisat") st = SolverType::CryptoMiniSat;
+    else if (solver_str == "cryptominisat" || solver_str == "cms") st = SolverType::CryptoMiniSat;
     else if (solver_str == "minisat") st = SolverType::MiniSat;
+    else if (solver_str == "z3") st = SolverType::Z3_SMT;
+    else if (solver_str != "cadical") {
+        std::cerr << "Error: unknown solver '" << solver_str
+                  << "' (expected cadical, kissat, cryptominisat, minisat, or z3)\n";
+        return 2;
+    }
 
     if (rounds < 1 || rounds > 64) {
         std::cerr << "Error: Invalid round count " << rounds << ". Rounds must be between 1 and 64.\n";
         return 1;
+    }
+
+    // The XOR dialect emits native XOR constraints, which only an XOR-capable
+    // solver can read. Reject the combination up front rather than feeding a
+    // plain SAT solver a formula it will misparse.
+    if (dialect == EncodingDialect::Xor && st != SolverType::CryptoMiniSat) {
+        std::cerr << "Error: --encoding xor requires an XOR-capable solver; "
+                     "use --solver cryptominisat.\n";
+        return 2;
     }
 
     auto utc_now = []() {
@@ -200,7 +225,11 @@ int cmd_experiment_run(int rounds, const std::string& solver_str, const std::str
     meta.start_time = utc_now();
     meta.deterministic_seed = 0xC0FFEE01u;
     meta.command_line = std::string("sha-research experiment run ") + std::to_string(rounds) + " " + solver_str;
-    meta.configuration_json = "{\"rounds\": " + std::to_string(rounds) + ", \"solver\": \"" + meta.solver_name + "\", \"seed\": 3235824897}";
+    meta.configuration_json = "{\"rounds\": " + std::to_string(rounds) +
+        ", \"solver\": \"" + meta.solver_name + "\""
+        ", \"encoding\": \"" + dialect_name(dialect) + "\""
+        ", \"carry_save_t1\": " + (carry_save ? "true" : "false") +
+        ", \"seed\": 3235824897}";
 
     std::string exp_dir = storage.create_experiment_run(meta);
     std::cout << "   Created experiment run: " << meta.experiment_id << " in " << exp_dir << "\n";
@@ -219,10 +248,22 @@ int cmd_experiment_run(int rounds, const std::string& solver_str, const std::str
     cfg.use_standard_iv = true;
     cfg.fix_target_digest = true;
     cfg.target_digest = target_digest;
+    cfg.dialect = dialect;
+    cfg.carry_save_t1 = carry_save;
 
-    std::cout << "   Encoding " << rounds << "-round SHA-256 constraints to CNF...\n";
+    std::cout << "   Encoding " << rounds << "-round SHA-256 constraints to CNF ("
+              << dialect_name(dialect) << (carry_save ? ", carry-save" : "") << ")...\n";
+
+    auto encode_t0 = std::chrono::steady_clock::now();
     auto enc = SatEncoder::encode_reduced_rounds(cfg);
-    std::cout << "   Generated CNF: " << enc.cnf.num_vars << " variables, " << enc.cnf.clauses.size() << " clauses.\n";
+    auto encode_t1 = std::chrono::steady_clock::now();
+    const double encode_seconds =
+        std::chrono::duration<double>(encode_t1 - encode_t0).count();
+
+    std::cout << "   Generated CNF: " << enc.cnf.num_vars << " variables, "
+              << enc.cnf.clauses.size() << " clauses, "
+              << enc.cnf.xor_constraints.size() << " XOR constraints ("
+              << encode_seconds << " s).\n";
 
     auto solver = SolverFactory::create(st);
     if (!solver || !solver->is_available()) {
@@ -231,7 +272,7 @@ int cmd_experiment_run(int rounds, const std::string& solver_str, const std::str
     }
 
     std::cout << "   Invoking solver " << meta.solver_name << "...\n";
-    auto sol_res = solver->solve_cnf(enc.cnf, 60);
+    auto sol_res = solver->solve_cnf(enc.cnf, timeout_seconds);
     meta.solver_version = sol_res.stats.solver_version;
     if (!sol_res.stats.command_line.empty()) {
         meta.command_line += std::string(" | solver_cmd: ") + sol_res.stats.command_line;
@@ -277,8 +318,8 @@ int cmd_experiment_run(int rounds, const std::string& solver_str, const std::str
             store_be32(cand_block.data() + i * 4, msg_words[i]);
         }
 
+        std::string cand_path = (std::filesystem::path(exp_dir) / "artifacts" / "candidate_block.bin").string();
         {
-            std::string cand_path = (std::filesystem::path(exp_dir) / "artifacts" / "candidate_block.bin").string();
             std::ofstream cf(cand_path, std::ios::binary);
             if (cf.is_open()) {
                 cf.write(reinterpret_cast<const char*>(cand_block.data()), static_cast<std::streamsize>(cand_block.size()));
@@ -314,16 +355,119 @@ int cmd_experiment_run(int rounds, const std::string& solver_str, const std::str
             meta.conclusion = "Solver claimed SAT but candidate failed independent verification: " + verdict.failure_reason;
             std::cout << "   [REJECTED via IndependentVerifier] Candidate failed verification: " << verdict.failure_reason << "\n";
         }
+
+        // Machine-readable result contract consumed by the Python platform.
+        // The worker pool must never infer success from prose or exit codes;
+        // it reads these two lines and then re-verifies independently.
+        std::string cand_abs = std::filesystem::absolute(cand_path).string();
+        for (char& ch : cand_abs) if (ch == '\\') ch = '/';
+        std::cout << "RESULT_CANDIDATE=" << cand_abs << "\n";
+        std::cout << "RESULT_TARGET_DIGEST=" << target_digest.to_hex() << "\n";
+        std::cout << "RESULT_ROUNDS=" << rounds << "\n";
+        std::cout << "RESULT_CLASSIFICATION=" << meta.classification << "\n";
+        std::cout << "RESULT_CNF_VARS=" << enc.cnf.num_vars << "\n";
+        std::cout << "RESULT_CNF_CLAUSES=" << enc.cnf.clauses.size() << "\n";
+        std::cout << "RESULT_CNF_XORS=" << enc.cnf.xor_constraints.size() << "\n";
+        std::cout << "RESULT_ENCODING=" << dialect_name(dialect) << "\n";
+        std::cout << "RESULT_CARRY_SAVE=" << (carry_save ? 1 : 0) << "\n";
+        std::cout << "RESULT_ENCODE_TIME=" << encode_seconds << "\n";
+        std::cout << "RESULT_SOLVER_TIME=" << sol_res.stats.wall_time_seconds << "\n";
+        std::cout << "RESULT_SOLVER_STATUS=" << sha256_research::to_string(sol_res.status) << "\n";
+        std::cout << "RESULT_SOLVER_EXIT=" << sol_res.stats.exit_code << "\n";
+        std::cout.flush();
+        meta.end_time = utc_now();
+        storage.finalize_experiment(meta.experiment_id, meta, artifacts, verdict);
+        std::cout << "   Experiment finalized: " << meta.experiment_id << "\n";
+        return verdict.is_valid ? 0 : 2;
     } else {
         meta.outcome_success = false;
         meta.classification = "NoSolutionFound";
         meta.conclusion = "Solver did not find solution within timeout.";
     }
 
+    // No candidate was produced. State so explicitly and unambiguously so the
+    // caller records a negative result instead of hunting for a candidate.
+    std::cout << "RESULT_CANDIDATE=NONE\n";
+    std::cout << "RESULT_TARGET_DIGEST=" << target_digest.to_hex() << "\n";
+    std::cout << "RESULT_ROUNDS=" << rounds << "\n";
+    std::cout << "RESULT_CLASSIFICATION=" << meta.classification << "\n";
+    std::cout << "RESULT_CNF_VARS=" << enc.cnf.num_vars << "\n";
+        std::cout << "RESULT_CNF_CLAUSES=" << enc.cnf.clauses.size() << "\n";
+        std::cout << "RESULT_CNF_XORS=" << enc.cnf.xor_constraints.size() << "\n";
+        std::cout << "RESULT_ENCODING=" << dialect_name(dialect) << "\n";
+        std::cout << "RESULT_CARRY_SAVE=" << (carry_save ? 1 : 0) << "\n";
+        std::cout << "RESULT_ENCODE_TIME=" << encode_seconds << "\n";
+    std::cout << "RESULT_SOLVER_TIME=" << sol_res.stats.wall_time_seconds << "\n";
+        std::cout << "RESULT_SOLVER_STATUS=" << sha256_research::to_string(sol_res.status) << "\n";
+        std::cout << "RESULT_SOLVER_EXIT=" << sol_res.stats.exit_code << "\n";
+    std::cout.flush();
+
     meta.end_time = utc_now();
     storage.finalize_experiment(meta.experiment_id, meta, artifacts, verdict);
     std::cout << "   Experiment finalized: " << meta.experiment_id << "\n";
-    return 0;
+    return 1;
+}
+
+struct ExperimentOptions {
+    uint32_t rounds{8};
+    std::string solver_str{"cadical"};
+    std::string out_dir{"evidence"};
+    EncodingDialect dialect{EncodingDialect::Tseitin};
+    bool carry_save{false};
+    uint32_t timeout{60};
+};
+
+// `sha-research preimage --rounds N [--solver S] [--encoding xor|tseitin]
+//                         [--carry-save] [--timeout T] [--out DIR]`
+//
+// Emits the full machine-readable result contract on stdout, including the
+// encoding metrics the autonomous loop needs to make escalation decisions.
+int cmd_preimage(const std::vector<std::string>& args) {
+    ExperimentOptions opt;
+
+    auto need_value = [&](size_t& i, const char* name) -> std::string {
+        if (i + 1 >= args.size()) {
+            throw std::invalid_argument(std::string("missing value for ") + name);
+        }
+        return args[++i];
+    };
+
+    try {
+        for (size_t i = 0; i < args.size(); ++i) {
+            const std::string& a = args[i];
+            if (a == "--rounds") {
+                opt.rounds = static_cast<uint32_t>(std::stoul(need_value(i, "--rounds")));
+            } else if (a == "--solver") {
+                opt.solver_str = need_value(i, "--solver");
+            } else if (a == "--out") {
+                opt.out_dir = need_value(i, "--out");
+            } else if (a == "--timeout") {
+                opt.timeout = static_cast<uint32_t>(std::stoul(need_value(i, "--timeout")));
+            } else if (a == "--encoding") {
+                const std::string enc = need_value(i, "--encoding");
+                if (enc == "xor") {
+                    opt.dialect = EncodingDialect::Xor;
+                } else if (enc == "tseitin") {
+                    opt.dialect = EncodingDialect::Tseitin;
+                } else {
+                    throw std::invalid_argument(
+                        "unknown --encoding '" + enc + "' (expected 'xor' or 'tseitin')");
+                }
+            } else if (a == "--carry-save") {
+                opt.carry_save = true;
+            } else {
+                throw std::invalid_argument("unknown option '" + a + "'");
+            }
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << "\n";
+        std::cerr << "Usage: sha-research preimage --rounds N [--solver S] "
+                     "[--encoding xor|tseitin] [--carry-save] [--timeout T] [--out DIR]\n";
+        return 2;
+    }
+
+    return cmd_experiment_run(static_cast<int>(opt.rounds), opt.solver_str, opt.out_dir,
+                              opt.dialect, opt.carry_save, opt.timeout);
 }
 
 struct CampaignState {
@@ -433,7 +577,9 @@ int cmd_campaign_pause() {
     return 0;
 }
 
-int cmd_campaign_start(int max_rounds, const std::string& solver_name, int start_from = 1) {
+int cmd_campaign_start(int max_rounds, const std::string& solver_name, int start_from = 1,
+                       EncodingDialect dialect = EncodingDialect::Tseitin,
+                       bool carry_save = false) {
     auto utc_now = []() {
         auto now = std::chrono::system_clock::now();
         std::time_t tt = std::chrono::system_clock::to_time_t(now);
@@ -468,12 +614,17 @@ int cmd_campaign_start(int max_rounds, const std::string& solver_name, int start
 
     std::cout << "===============================================================\n"
               << "       STARTING AUTONOMOUS CAMPAIGN: " << s.campaign_id << "\n"
-              << "       Target: Rounds " << start_from << ".." << max_rounds << " | Solver: " << solver_name << "\n"
+              << "       Target: Rounds " << start_from << ".." << max_rounds
+              << " | Solver: " << solver_name
+              << " | Encoding: " << dialect_name(dialect)
+              << (carry_save ? " + carry-save" : "") << "\n"
               << "===============================================================\n";
 
     for (int r = start_from; r <= max_rounds; ++r) {
         std::cout << "\n[Campaign Step] Progressing to " << r << " rounds...\n";
-        int res = cmd_experiment_run(r, solver_name, "evidence");
+        // Exit code 0 means the candidate was independently verified;
+        // 1 means the solver produced none; 2 means it failed verification.
+        int res = cmd_experiment_run(r, solver_name, "evidence", dialect, carry_save, 60);
 
         s.last_updated = utc_now();
         if (res == 0) {
@@ -554,11 +705,18 @@ int main(int argc, char* argv[]) {
             if (argc >= 4) rounds = std::stoi(argv[3]);
             if (argc >= 5) solver = argv[4];
             if (argc >= 6) out_dir = argv[5];
-            return cmd_experiment_run(rounds, solver, out_dir);
+            return cmd_experiment_run(rounds, solver, out_dir,
+                                       EncodingDialect::Tseitin, false, 60);
         } else {
-            std::cout << "Usage: sha-research experiment run [rounds] [solver] [out_dir]\n";
+            std::cout << "Usage: sha-research experiment run [rounds] [solver] [out_dir]\n"
+                         "       sha-research preimage --rounds N [--solver S] "
+                         "[--encoding xor|tseitin] [--carry-save] [--timeout T]\n";
             return 0;
         }
+    } else if (cmd == "preimage") {
+        std::vector<std::string> rest;
+        for (int i = 2; i < argc; ++i) rest.emplace_back(argv[i]);
+        return cmd_preimage(rest);
     } else if (cmd == "campaign") {
         if (argc >= 3) {
             std::string sub = argv[2];

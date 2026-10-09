@@ -307,13 +307,16 @@ VerificationVerdict IndependentVerifier::verify_preimage_candidate(const Preimag
     auto t0 = std::chrono::high_resolution_clock::now();
     VerificationVerdict verdict;
 
+    // Body extracted so the timing stamp is recorded on every exit path,
+    // including the early rejections below. Exposed via the JSON contract.
+    auto body = [&]() -> void {
     // Reject malformed or impossible configurations explicitly (GEMINI.md requirement)
     if (candidate.claimed_rounds == 0) {
         verdict.actual_rounds = 0;
         verdict.is_valid = false;
         verdict.classification = CandidateClassification::Invalid;
         verdict.failure_reason = "Invalid round count: claimed_rounds cannot be 0";
-        return verdict;
+        return;
     }
 
     if (candidate.claimed_rounds > 64) {
@@ -321,7 +324,7 @@ VerificationVerdict IndependentVerifier::verify_preimage_candidate(const Preimag
         verdict.is_valid = false;
         verdict.classification = CandidateClassification::Invalid;
         verdict.failure_reason = "Invalid round count: claimed_rounds (" + std::to_string(candidate.claimed_rounds) + ") exceeds standard maximum 64";
-        return verdict;
+        return;
     }
 
     const uint32_t eff_rounds = candidate.claimed_rounds;
@@ -332,7 +335,7 @@ VerificationVerdict IndependentVerifier::verify_preimage_candidate(const Preimag
         verdict.is_valid = false;
         verdict.classification = CandidateClassification::Invalid;
         verdict.failure_reason = "Preimage candidate message is empty";
-        return verdict;
+        return;
     }
 
     if (eff_rounds < 64 || candidate.custom_iv) {
@@ -340,7 +343,7 @@ VerificationVerdict IndependentVerifier::verify_preimage_candidate(const Preimag
             verdict.is_valid = false;
             verdict.classification = CandidateClassification::Invalid;
             verdict.failure_reason = "Reduced-round / custom IV candidate must provide exact 64-byte block";
-            return verdict;
+            return;
         }
 
         Sha256State state = candidate.iv;
@@ -369,6 +372,9 @@ VerificationVerdict IndependentVerifier::verify_preimage_candidate(const Preimag
             verdict.classification = CandidateClassification::ReducedRoundPreimage;
         }
     }
+    };
+
+    body();
 
     auto t1 = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double, std::micro> diff = t1 - t0;

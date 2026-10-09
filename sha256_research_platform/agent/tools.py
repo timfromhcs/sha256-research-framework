@@ -9,17 +9,19 @@ Enforces anti-clamping and prevents arbitrary filesystem/shell/network access.
 """
 
 import os
+import re
 import sys
 import json
 import time
 import subprocess
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Dict, Any, List, Optional
 
 from ..storage.db import DatabaseManager
 from ..models.runtime import LocalModelRuntime
 from ..models.hardware import probe_hardware
-from ..workers.worker import ResearchWorkerPool
+from ..workers.worker import ResearchWorkerPool, VerifierBridge, BinaryResolution, VerificationUnavailable
 from ..rag.memory import LocalResearchMemory
 from ..agent.trust import TrustLevel, EpistemicTrustManager, EpistemicIntegrityError
 
@@ -37,12 +39,14 @@ class ToolRegistry:
         db: Optional[DatabaseManager] = None,
         runtime: Optional[LocalModelRuntime] = None,
         worker_pool: Optional[ResearchWorkerPool] = None,
-        rag_memory: Optional[LocalResearchMemory] = None
+        rag_memory: Optional[LocalResearchMemory] = None,
+        verifier: Optional[VerifierBridge] = None,
     ):
         self.db = db or DatabaseManager()
         self.runtime = runtime or LocalModelRuntime(self.db)
         self.worker_pool = worker_pool or ResearchWorkerPool(self.db)
         self.rag_memory = rag_memory or LocalResearchMemory(self.db, self.runtime)
+        self.verifier = verifier or VerifierBridge()
 
         self.tools = {
             "get_system_status": self.get_system_status,
@@ -56,6 +60,7 @@ class ToolRegistry:
             "get_experiment": self.get_experiment,
             "cancel_experiment": self.cancel_experiment,
             "verify_candidate": self.verify_candidate,
+            "verify_preimage_candidate": self.verify_preimage_candidate,
             "compare_experiments": self.compare_experiments,
             "search_evidence": self.search_evidence,
             "read_artifact": self.read_artifact,
@@ -236,7 +241,12 @@ class ToolRegistry:
 
     # 11. verify_candidate
     def verify_candidate(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Submits candidate to IndependentVerifier binary for strict cryptographic verification."""
+        """Submits a candidate to the segregated IndependentVerifier.
+
+        There is no offline fallback. If the verifier binary cannot be reached,
+        this raises: a cryptographic verdict must come from the independent
+        engine, never from this process's own reasoning.
+        """
         msg_a_hex = args.get("message_a_hex")
         msg_b_hex = args.get("message_b_hex")
         rounds = args.get("rounds", 64)
@@ -249,30 +259,83 @@ class ToolRegistry:
         if rounds < 1 or rounds > 64:
             raise ToolValidationError(f"Invalid rounds {rounds}: must be between 1 and 64.")
 
-        bin_dir = "build/Release" if os.path.isdir("build/Release") else "build"
-        verifier_exe = os.path.join(bin_dir, "sha-verifier.exe")
+        try:
+            verdict = self.verifier.verify_collision(msg_a_hex, msg_b_hex, rounds)
+        except VerificationUnavailable as e:
+            raise ToolValidationError(
+                f"Independent verification unavailable: {e}. Refusing to issue a verdict."
+            ) from e
 
-        if os.path.exists(verifier_exe):
-            cmd = [verifier_exe, "verify-pair", msg_a_hex, msg_b_hex, str(rounds)]
-            proc = subprocess.run(cmd, capture_output=True, text=True)
-            stdout = proc.stdout
-            is_valid = proc.returncode == 0
-        else:
-            is_valid = (msg_a_hex == msg_b_hex) is False
-            stdout = f"Is Valid: {is_valid}\nClassification: ReducedRoundCollision"
+        is_valid = bool(verdict["is_valid"])
+        trust_level = "L3" if is_valid else "L1"
 
-        verdict = {
+        result = {
             "is_valid": is_valid,
             "rounds": rounds,
-            "classification": "ReducedRoundCollision" if is_valid and rounds < 64 else ("StandardFullCollision" if is_valid and rounds == 64 else "Invalid"),
-            "verifier_output": stdout,
-            "trust_level": "L3" if is_valid else "L1"
+            "actual_rounds": verdict.get("actual_rounds"),
+            # Classification comes from the verifier, never synthesised here.
+            "classification": verdict["classification"],
+            "failure_reason": verdict.get("failure_reason", ""),
+            "digest_a": verdict.get("digest_a"),
+            "digest_b": verdict.get("digest_b"),
+            "hamming_distance": verdict.get("hamming_distance"),
+            "verified_by": verdict.get("verifier_engine"),
+            "engine_segregated": verdict.get("engine_segregated"),
+            "trust_level": trust_level,
         }
 
         # Epistemic validation
-        EpistemicTrustManager.validate_promotion("L2", verdict["trust_level"], verdict)
+        EpistemicTrustManager.validate_promotion("L2", trust_level, result)
 
-        return verdict
+        return result
+
+    # 11b. verify_preimage_candidate
+    def verify_preimage_candidate(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Verifies a preimage candidate (message bytes + target digest)."""
+        import base64
+
+        message_hex = args.get("message_hex")
+        target_digest = args.get("target_digest")
+        rounds = args.get("rounds", 64)
+
+        if not message_hex or not target_digest:
+            raise ToolValidationError(
+                "Arguments 'message_hex' and 'target_digest' are required."
+            )
+
+        rounds = int(rounds)
+        if rounds < 1 or rounds > 64:
+            raise ToolValidationError(f"Invalid rounds {rounds}: must be between 1 and 64.")
+
+        try:
+            message = bytes.fromhex(message_hex)
+        except ValueError as e:
+            raise ToolValidationError(f"message_hex is not valid hex: {e}") from e
+
+        try:
+            verdict = self.verifier.verify_preimage(message, target_digest, rounds)
+        except VerificationUnavailable as e:
+            raise ToolValidationError(
+                f"Independent verification unavailable: {e}. Refusing to issue a verdict."
+            ) from e
+
+        is_valid = bool(verdict["is_valid"])
+        trust_level = "L3" if is_valid else "L1"
+        result = {
+            "is_valid": is_valid,
+            "rounds": rounds,
+            "actual_rounds": verdict.get("actual_rounds"),
+            "classification": verdict["classification"],
+            "failure_reason": verdict.get("failure_reason", ""),
+            "computed_digest": verdict.get("digest_a"),
+            "target_digest": verdict.get("digest_b"),
+            "hamming_distance": verdict.get("hamming_distance"),
+            "verified_by": verdict.get("verifier_engine"),
+            "engine_segregated": verdict.get("engine_segregated"),
+            "trust_level": trust_level,
+        }
+        EpistemicTrustManager.validate_promotion("L2", trust_level, result)
+        return result
 
     # 12. compare_experiments
     def compare_experiments(self, args: Dict[str, Any]) -> Dict[str, Any]:
@@ -306,42 +369,157 @@ class ToolRegistry:
         if not path:
             raise ToolValidationError("Argument 'path' is required.")
 
-        # Path sandboxing: forbid escaping workspace
-        norm_path = os.path.normpath(path)
-        if norm_path.startswith("..") or os.path.isabs(norm_path) and not os.path.exists(norm_path):
-            raise ToolValidationError(f"Path access denied or invalid: {path}")
-
-        if not os.path.exists(norm_path):
+        resolved = self._resolve_within_workspace(path)
+        if not resolved.is_file():
             raise ToolValidationError(f"Artifact not found: {path}")
 
-        with open(norm_path, "r", encoding="utf-8", errors="replace") as f:
+        with open(resolved, "r", encoding="utf-8", errors="replace") as f:
             content = f.read(16384)  # Read up to 16KB
 
-        return {"path": path, "content": content, "size_bytes": os.path.getsize(norm_path)}
+        return {
+            "path": str(resolved),
+            "content": content,
+            "size_bytes": resolved.stat().st_size,
+        }
+
+    def _resolve_within_workspace(self, path: str) -> Path:
+        """Resolve `path` and confine it to the workspace root.
+
+        Uses resolved-path containment rather than string prefix checks, so
+        symlinks, `..` segments, and Windows drive-relative forms cannot escape.
+        """
+        root = Path(os.environ.get("SHA_WORKSPACE_ROOT", ".")).resolve()
+        try:
+            candidate = Path(path)
+            if not candidate.is_absolute():
+                candidate = root / candidate
+            resolved = candidate.resolve()
+        except (OSError, RuntimeError) as e:
+            raise ToolValidationError(f"Path could not be resolved: {path}") from e
+
+        try:
+            resolved.relative_to(root)
+        except ValueError as e:
+            raise ToolValidationError(
+                f"Path escapes the workspace root and is denied: {path}"
+            ) from e
+
+        return resolved
 
     # 15. analyze_results
     def analyze_results(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Derive an analysis from measured experiment data.
+
+        Nothing here is hardcoded: every field is computed from the recorded
+        run, verification, and metric rows.
+        """
         exp_id = args.get("experiment_id")
-        exp_info = self.get_experiment({"experiment_id": exp_id}) if exp_id else {}
+        if not exp_id:
+            raise ToolValidationError("Argument 'experiment_id' is required.")
+
+        exp_info = self.get_experiment({"experiment_id": exp_id})
+
+        conn = self.db.get_connection()
+        try:
+            metrics = conn.execute(
+                "SELECT metric_name, metric_value, unit FROM metrics WHERE experiment_id = ?",
+                (exp_id,),
+            ).fetchall()
+        finally:
+            conn.close()
+
+        metric_map = {m["metric_name"]: m["metric_value"] for m in metrics}
+        verifications = exp_info.get("verifications", [])
+        verified = [v for v in verifications if v.get("is_valid")]
+
+        findings = []
+        if not verifications:
+            findings.append("No verification record exists for this experiment.")
+        elif verified:
+            for v in verified:
+                findings.append(
+                    f"Independent verifier confirmed a {v.get('classification')} candidate "
+                    f"at {v.get('verified_rounds')} rounds."
+                )
+        else:
+            for v in verifications:
+                findings.append(
+                    f"Independent verifier rejected the candidate: {v.get('failure_reason') or 'no reason recorded'}"
+                )
+
+        hamming = metric_map.get("verifier_hamming_distance")
+        if hamming is not None:
+            findings.append(f"Verifier Hamming distance: {hamming} bits (0 = exact match).")
+
+        wall = metric_map.get("wall_time_seconds")
+        if wall is not None:
+            findings.append(f"Wall time: {wall:.3f} s.")
+
         return {
-            "analysis": "Statistical evaluation complete",
-            "experiment": exp_info,
-            "cryptographic_finding": "No anomaly detected; reduced-round constraints correctly verified."
+            "experiment_id": exp_id,
+            "status": exp_info.get("status"),
+            "outcome": exp_info.get("outcome"),
+            "classification": exp_info.get("classification"),
+            "rounds": exp_info.get("rounds"),
+            "solver": exp_info.get("solver"),
+            "metrics": metric_map,
+            "verification_count": len(verifications),
+            "verified_count": len(verified),
+            "findings": findings,
+            "analysis_source": "measured",
         }
 
     # 16. benchmark_backend
     def benchmark_backend(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Measure backend throughput by executing the real benchmark.
+
+        No cached or hardcoded numbers. If the benchmark cannot run, this
+        raises rather than reporting an invented figure.
+        """
         backend = args.get("backend", "cpu")
         rounds = int(args.get("rounds", 16))
         if rounds < 1 or rounds > 64:
             raise ToolValidationError(f"Anti-clamping violation: rounds {rounds} out of range [1, 64]")
 
+        try:
+            exe = BinaryResolution.require()
+        except FileNotFoundError as e:
+            raise ToolValidationError(
+                f"Cannot benchmark: research binary unavailable. {e}"
+            ) from e
+
+        proc = subprocess.run(
+            [str(exe), "benchmark"],
+            capture_output=True, text=True, timeout=300,
+        )
+        if proc.returncode != 0:
+            raise ToolValidationError(
+                f"Benchmark failed (exit {proc.returncode}): {proc.stderr.strip()[:300]}"
+            )
+
+        throughput = self._parse_throughput(proc.stdout)
         return {
             "backend": backend,
             "rounds": rounds,
-            "throughput_mhashes_sec": 27.5 if backend == "cpu" else 150.0,
-            "status": "PASS"
+            "throughput_mhashes_sec": throughput,
+            "measurement_source": "executed",
+            "raw_output": proc.stdout.strip()[-2000:],
         }
+
+    @staticmethod
+    def _parse_throughput(stdout: str) -> Optional[float]:
+        """Extract a measured throughput figure from benchmark output."""
+        pattern = re.compile(
+            r"([0-9]+(?:\.[0-9]+)?)\s*(MH/s|MH\/s|GH/s|M hashes|hashes/sec)",
+            re.IGNORECASE,
+        )
+        values = []
+        for m in pattern.finditer(stdout or ""):
+            try:
+                values.append(float(m.group(1)))
+            except ValueError:
+                continue
+        return max(values) if values else None
 
     # 17. generate_report
     def generate_report(self, args: Dict[str, Any]) -> Dict[str, Any]:

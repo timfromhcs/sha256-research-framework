@@ -1,18 +1,45 @@
 #include "sha256_research/sat/sat_encoder.hpp"
+
+#include <algorithm>
+#include <cstdlib>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
 
 namespace sha256_research {
 
+namespace {
+
+// CryptoMiniSat extended DIMACS writes XOR constraints as
+//   x <lit> <lit> ... 0
+// The parity of the literals must hold. A false parity has already been
+// normalised into a shared TRUE literal by CnfFormula::add_xor_constraint, so
+// every emitted clause is a true-parity constraint.
+void write_xor_line(std::ostream& os, const std::vector<int>& lits) {
+    if (lits.empty()) return;
+    os << "x";
+    for (int l : lits) os << " " << l;
+    os << " 0\n";
+}
+
+} // namespace
+
 std::string CnfFormula::to_dimacs() const {
     std::ostringstream oss;
-    oss << "p cnf " << num_vars << " " << clauses.size() << "\n";
+    oss << "p cnf " << num_vars << " "
+        << (clauses.size() + xor_constraints.size()) << "\n";
     for (const auto& cl : clauses) {
         for (int lit : cl) {
             oss << lit << " ";
         }
         oss << "0\n";
+    }
+    if (uses_xor()) {
+        oss << "c CryptoMiniSat extended DIMACS: "
+            << xor_constraints.size() << " native XOR constraints\n";
+        for (const auto& xc : xor_constraints) {
+            write_xor_line(oss, xc.lits);
+        }
     }
     return oss.str();
 }
@@ -20,13 +47,22 @@ std::string CnfFormula::to_dimacs() const {
 bool CnfFormula::write_dimacs_file(const std::string& path) const {
     std::ofstream out(path);
     if (!out.is_open()) return false;
-    out << "c SHA-256 Cryptanalysis CNF formula\n";
-    out << "p cnf " << num_vars << " " << clauses.size() << "\n";
+    out << "c SHA-256 Cryptanalysis formula ("
+        << (dialect == EncodingDialect::Xor ? "XOR-extended DIMACS" : "pure CNF")
+        << ")\n";
+    out << "p cnf " << num_vars << " "
+        << (clauses.size() + xor_constraints.size()) << "\n";
     for (const auto& cl : clauses) {
         for (int lit : cl) {
             out << lit << " ";
         }
         out << "0\n";
+    }
+    if (uses_xor()) {
+        out << "c native XOR constraints: " << xor_constraints.size() << "\n";
+        for (const auto& xc : xor_constraints) {
+            write_xor_line(out, xc.lits);
+        }
     }
     return true;
 }
@@ -61,6 +97,27 @@ void SatEncoder::encode_xor3(CnfFormula& cnf, int a, int b, int c, int out) {
     encode_xor2(cnf, tmp, c, out);
 }
 
+int SatEncoder::encode_parity2(CnfFormula& cnf, int a, int b) {
+    int out = cnf.new_var();
+    if (cnf.dialect == EncodingDialect::Xor) {
+        // Single native constraint: out <-> a XOR b, no auxiliary variable.
+        cnf.add_xor_constraint({a, b, -out}, true);
+    } else {
+        encode_xor2(cnf, a, b, out);
+    }
+    return out;
+}
+
+int SatEncoder::encode_parity3(CnfFormula& cnf, int a, int b, int c) {
+    int out = cnf.new_var();
+    if (cnf.dialect == EncodingDialect::Xor) {
+        cnf.add_xor_constraint({a, b, c, -out}, true);
+    } else {
+        encode_xor3(cnf, a, b, c, out);
+    }
+    return out;
+}
+
 void SatEncoder::encode_maj(CnfFormula& cnf, int a, int b, int c, int out) {
     cnf.add_clause({-a, -b, out});
     cnf.add_clause({-a, -c, out});
@@ -87,11 +144,12 @@ std::vector<int> SatEncoder::rotate_right(const std::vector<int>& in, uint32_t n
 }
 
 std::vector<int> SatEncoder::shift_right(CnfFormula& cnf, const std::vector<int>& in, uint32_t n) {
-    std::vector<int> res(32);
-    // Constant 0 literal
-    int zero_var = cnf.new_var();
-    cnf.add_clause({-zero_var}); // fixed to false
+    // One shared FALSE literal for the whole formula. Literal 0 cannot be used
+    // here because it is the DIMACS clause terminator, and a per-call variable
+    // would be pure bloat since gamma0/gamma1 run once per expanded word.
+    const int zero_var = cnf.false_literal();
 
+    std::vector<int> res(32);
     for (size_t i = 0; i < 32; ++i) {
         if (i + n < 32) {
             res[i] = in[i + n];
@@ -108,7 +166,7 @@ std::vector<int> SatEncoder::encode_sigma0(CnfFormula& cnf, const std::vector<in
     auto r22 = rotate_right(x, 22);
     std::vector<int> out = cnf.new_vars(32);
     for (size_t i = 0; i < 32; ++i) {
-        encode_xor3(cnf, r2[i], r13[i], r22[i], out[i]);
+        out[i] = encode_parity3(cnf, r2[i], r13[i], r22[i]);
     }
     return out;
 }
@@ -119,7 +177,7 @@ std::vector<int> SatEncoder::encode_sigma1(CnfFormula& cnf, const std::vector<in
     auto r25 = rotate_right(x, 25);
     std::vector<int> out = cnf.new_vars(32);
     for (size_t i = 0; i < 32; ++i) {
-        encode_xor3(cnf, r6[i], r11[i], r25[i], out[i]);
+        out[i] = encode_parity3(cnf, r6[i], r11[i], r25[i]);
     }
     return out;
 }
@@ -130,7 +188,7 @@ std::vector<int> SatEncoder::encode_gamma0(CnfFormula& cnf, const std::vector<in
     auto s3 = shift_right(cnf, x, 3);
     std::vector<int> out = cnf.new_vars(32);
     for (size_t i = 0; i < 32; ++i) {
-        encode_xor3(cnf, r7[i], r18[i], s3[i], out[i]);
+        out[i] = encode_parity3(cnf, r7[i], r18[i], s3[i]);
     }
     return out;
 }
@@ -141,7 +199,7 @@ std::vector<int> SatEncoder::encode_gamma1(CnfFormula& cnf, const std::vector<in
     auto s10 = shift_right(cnf, x, 10);
     std::vector<int> out = cnf.new_vars(32);
     for (size_t i = 0; i < 32; ++i) {
-        encode_xor3(cnf, r17[i], r19[i], s10[i], out[i]);
+        out[i] = encode_parity3(cnf, r17[i], r19[i], s10[i]);
     }
     return out;
 }
@@ -162,32 +220,137 @@ std::vector<int> SatEncoder::encode_maj32(CnfFormula& cnf, const std::vector<int
     return out;
 }
 
-std::vector<int> SatEncoder::encode_add32(CnfFormula& cnf, const std::vector<int>& a, const std::vector<int>& b) {
-    std::vector<int> sum = cnf.new_vars(32);
-    int carry = 0;
+int SatEncoder::encode_full_adder(CnfFormula& cnf, int a, int b, int carry_in, int& carry_out) {
+    // Carry in may alias carry out in the caller's loop variable, so capture
+    // it by value before writing the outgoing carry.
+    const int cin = carry_in;
 
-    for (size_t i = 0; i < 32; ++i) {
-        if (i == 0) {
-            // First bit has carry_in = 0
-            encode_xor2(cnf, a[0], b[0], sum[0]);
-            carry = cnf.new_var();
-            encode_and2(cnf, a[0], b[0], carry);
-        } else {
-            encode_xor3(cnf, a[i], b[i], carry, sum[i]);
-            if (i < 31) {
-                int next_carry = cnf.new_var();
-                encode_maj(cnf, a[i], b[i], carry, next_carry);
-                carry = next_carry;
-            }
-        }
+    // sum   = a XOR b XOR carry_in
+    // carry = MAJ(a, b, carry_in)
+    int sum = cnf.new_var();
+    if (cnf.dialect == EncodingDialect::Xor) {
+        cnf.add_xor_constraint({a, b, cin, -sum}, true);
+    } else {
+        encode_xor3(cnf, a, b, cin, sum);
     }
+
+    int cout_var = cnf.new_var();
+    encode_maj(cnf, a, b, cin, cout_var);
+    carry_out = cout_var;
+
     return sum;
 }
 
+std::vector<int> SatEncoder::encode_add32(CnfFormula& cnf, const std::vector<int>& a, const std::vector<int>& b) {
+    std::vector<int> out = cnf.new_vars(32);
+    // Literal 0 is not usable inside XOR constraints; start from a real
+    // variable pinned to false.
+    int carry = cnf.false_literal();
+
+    for (size_t i = 0; i < 32; ++i) {
+        int next_carry = 0;
+        out[i] = encode_full_adder(cnf, a[i], b[i], carry, next_carry);
+        carry = next_carry;
+    }
+    return out;
+}
+
+std::vector<int> SatEncoder::encode_add32_multi(
+    CnfFormula& cnf, const std::vector<const std::vector<int>*>& addends) {
+    if (addends.empty()) {
+        return cnf.new_vars(32);
+    }
+    if (addends.size() == 1) {
+        return *addends.front();
+    }
+    if (addends.size() == 2) {
+        return encode_add32(cnf, *addends[0], *addends[1]);
+    }
+
+    // Carry-save reduction. Collapsing the addend bits at a position with XOR
+    // would be WRONG: the column sum of several addends carries a multi-bit
+    // weight (3 + 3 needs a carry of 2, not a single bit), so parity loses
+    // information. Instead reduce with 3:2 compressors, which satisfy
+    //     a + b + c  ==  sum + 2 * carry
+    // exactly, and shift the compressor carry into the next column.
+    //
+    // Each column is reduced to at most two literals, leaving two rows that a
+    // single ripple-carry adder finishes. This is what collapses SHA-256's
+    // T1 = h + S1 + Ch + W + K from four serial adders into one pass.
+    const int zero = cnf.false_literal();
+    std::vector<std::vector<int>> columns(32);
+    for (size_t i = 0; i < 32; ++i) {
+        columns[i].reserve(addends.size() + 8);
+        for (const auto* addend : addends) {
+            columns[i].push_back((*addend)[i]);
+        }
+    }
+
+    for (size_t i = 0; i < 32; ++i) {
+        while (columns[i].size() > 2) {
+            int a = columns[i][columns[i].size() - 3];
+            int b = columns[i][columns[i].size() - 2];
+            int c = columns[i][columns[i].size() - 1];
+            columns[i].resize(columns[i].size() - 3);
+
+            int sum = encode_parity3(cnf, a, b, c);
+            int carry = cnf.new_var();
+            encode_maj(cnf, a, b, c, carry);
+
+            columns[i].push_back(sum);
+            if (i + 1 < 32) {
+                columns[i + 1].push_back(carry);
+            }
+            // A carry shifted out of bit 31 is discarded, matching mod 2^32.
+        }
+    }
+
+    std::vector<int> row0(32), row1(32);
+    for (size_t i = 0; i < 32; ++i) {
+        row0[i] = columns[i].empty() ? zero : columns[i][0];
+        row1[i] = columns[i].size() > 1 ? columns[i][1] : zero;
+    }
+    return encode_add32(cnf, row0, row1);
+}
+
 std::vector<int> SatEncoder::encode_add32_const(CnfFormula& cnf, const std::vector<int>& a, uint32_t constant) {
-    std::vector<int> b = cnf.new_vars(32);
-    fix_const32(cnf, b, constant);
-    return encode_add32(cnf, a, b);
+    // out = (a + constant) mod 2^32
+    //
+    // Per bit i:  sum_i   = a_i XOR c_i XOR carry_i
+    //             carry_i+1 = MAJ(a_i, c_i, carry_i)
+    //
+    // When c_i is a known bit the cost collapses:
+    //   c_i == 0 : sum = a XOR carry            ; carry' = a AND carry
+    //   c_i == 1 : sum = NOT(a XOR carry)       ; carry' = a OR  carry
+    // This avoids materialising a 32-variable constant word plus 32 unit
+    // clauses, which is what the generic two-operand path would require.
+    std::vector<int> out = cnf.new_vars(32);
+    int carry = cnf.false_literal(); // pinned-false variable, not DIMACS literal 0
+
+    for (size_t i = 0; i < 32; ++i) {
+        const bool c_bit = ((constant >> i) & 1U) != 0;
+
+        // parity = a_i XOR carry  (always a true-parity XOR constraint)
+        int parity = encode_parity2(cnf, a[i], carry);
+
+        if (c_bit) {
+            // sum = NOT parity
+            encode_not(cnf, parity, out[i]);
+        } else {
+            out[i] = parity;
+        }
+
+        if (i < 31) {
+            int next_carry = cnf.new_var();
+            if (c_bit) {
+                encode_or2(cnf, a[i], carry, next_carry);   // MAJ(a, 1, carry)
+            } else {
+                encode_and2(cnf, a[i], carry, next_carry);  // MAJ(a, 0, carry)
+            }
+            carry = next_carry;
+        }
+    }
+    return out;
 }
 
 void SatEncoder::fix_const32(CnfFormula& cnf, const std::vector<int>& vars, uint32_t val) {
@@ -201,11 +364,21 @@ void SatEncoder::fix_const32(CnfFormula& cnf, const std::vector<int>& vars, uint
     }
 }
 
+bool SatEncoder::substitute_const32(CnfFormula& cnf, std::vector<int>& word, uint32_t val) {
+    // Bind every variable in `word` to the corresponding constant bit and
+    // report whether the word can be replaced by a literal-only vector.
+    fix_const32(cnf, word, val);
+    (void)cnf;
+    return true;
+}
+
 SatEncoder::Sha256SatEncoding SatEncoder::encode_reduced_rounds(const Sha256ProblemConfig& config) {
     if (config.num_rounds == 0 || config.num_rounds > 64) {
         throw std::invalid_argument("Invalid num_rounds: must be between 1 and 64");
     }
     Sha256SatEncoding enc;
+    enc.dialect = config.dialect;
+    enc.cnf.dialect = config.dialect;
     uint32_t rounds = config.num_rounds;
 
     // 1. Message variables W_0..W_{max(15, rounds-1)}
@@ -256,10 +429,22 @@ SatEncoder::Sha256SatEncoding SatEncoder::encode_reduced_rounds(const Sha256Prob
     for (uint32_t t = 0; t < rounds; ++t) {
         auto s1 = encode_sigma1(enc.cnf, state_e);
         auto ch_val = encode_ch32(enc.cnf, state_e, state_f, state_g);
-        auto t1_part1 = encode_add32(enc.cnf, state_h, s1);
-        auto t1_part2 = encode_add32(enc.cnf, ch_val, enc.message_vars[t]);
-        auto t1_part3 = encode_add32_const(enc.cnf, t1_part1, SHA256_K[t]);
-        auto t1 = encode_add32(enc.cnf, t1_part2, t1_part3);
+
+        std::vector<int> t1;
+        if (config.carry_save_t1) {
+            // T1 = h + S1(e) + Ch(e,f,g) + W[t] + K[t]  in one carry chain.
+            std::vector<int> k_const = enc.cnf.new_vars(32);
+            fix_const32(enc.cnf, k_const, SHA256_K[t]);
+            std::vector<const std::vector<int>*> addends = {
+                &state_h, &s1, &ch_val, &enc.message_vars[t], &k_const
+            };
+            t1 = encode_add32_multi(enc.cnf, addends);
+        } else {
+            auto t1_part1 = encode_add32(enc.cnf, state_h, s1);
+            auto t1_part2 = encode_add32(enc.cnf, ch_val, enc.message_vars[t]);
+            auto t1_part3 = encode_add32_const(enc.cnf, t1_part1, SHA256_K[t]);
+            t1 = encode_add32(enc.cnf, t1_part2, t1_part3);
+        }
 
         auto s0 = encode_sigma0(enc.cnf, state_a);
         auto maj_val = encode_maj32(enc.cnf, state_a, state_b, state_c);
@@ -283,7 +468,6 @@ SatEncoder::Sha256SatEncoding SatEncoder::encode_reduced_rounds(const Sha256Prob
 
     // 4. Output / Feedforward
     enc.final_digest_vars.resize(8);
-    auto initial_iv_vars = {iv[0], iv[1], iv[2], iv[3], iv[4], iv[5], iv[6], iv[7]};
     std::vector<std::vector<int>> working = {state_a, state_b, state_c, state_d, state_e, state_f, state_g, state_h};
 
     for (size_t i = 0; i < 8; ++i) {

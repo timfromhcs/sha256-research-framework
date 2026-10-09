@@ -1,16 +1,16 @@
 {
   "$schema": "../schemas/release_manifest.schema.json",
-  "manifest_schema_version": "2.0.0",
+  "manifest_schema_version": "4.0.0",
   "name": "sha256-research-framework",
-  "version": "2.0.0",
+  "version": "4.0.0",
   "repository": "https://github.com/timfromhcs/sha256-research-framework",
   "target_branch": "main",
-  "release_tag": "v2.0.0",
-  "source_commit_sha": "3c4ac1066df4b6ce679bb0df537947678b3caba4",
-  "commit_sha": "3c4ac1066df4b6ce679bb0df537947678b3caba4",
+  "release_tag": "v4.0.0",
+  "source_commit_sha": "2a8d27e04a3b653a7fa4cd42add1114581e1cc22",
+  "commit_sha": "2a8d27e04a3b653a7fa4cd42add1114581e1cc22",
   "release_commit_sha": null,
   "release_commit_semantics": "The repository release manifest records source_commit_sha (the verified source commit from which all tests, artifacts, and benchmarks were produced prior to release packaging). release_commit_sha is null within the committed tree to eliminate self-referential hash dependency, and is populated in post-release distribution artifacts.",
-  "timestamp": "2026-09-11T20:30:00+02:00",
+  "timestamp": "2026-10-09T12:00:00+02:00",
   "certification": {
     "status": "OFFICIALLY_VERIFIED",
     "anti_cheating_gate_passed": true,
@@ -18,21 +18,18 @@
     "claims": {
       "full_sha256_collision_claimed": false,
       "full_sha256_status": "UNBROKEN_COMPUTATIONALLY_SECURE",
-      "scientific_integrity_statement": "No standard full SHA-256 collision demonstrated.",
+      "scientific_integrity_statement": "No standard full SHA-256 collision or preimage demonstrated. Full preimage resistance is 2^256 compression-function evaluations (~1.16e77), a physical bound rather than an implementation gap.",
       "reduced_round_preimages_verified": [
         {
-          "rounds": 8,
-          "solver": "CaDiCaL 3.0.1",
-          "runtime_seconds": 0.179,
-          "verified_by": "Independent Verifier Standalone Engine"
-        },
-        {
-          "rounds": 10,
-          "solver": "Kissat 4.0.4",
-          "runtime_seconds": 0.13,
-          "verified_by": "Independent Verifier Standalone Engine"
+          "rounds": 18,
+          "solver": "CryptoMiniSat 5.8.0",
+          "encoding": "xor + carry-save",
+          "runtime_seconds": 14.08,
+          "classification": "ReducedRoundPreimage",
+          "verified_by": "Independent Verifier Segregated Engine"
         }
-      ]
+      ],
+      "unresolved_rounds_note": "Round 19 did not resolve within the measured budget. This is a statement about this encoding and this budget, NOT a proof that no preimage exists."
     }
   },
   "remote_ci_workflow_runs": [
@@ -81,18 +78,28 @@
   ],
   "test_suites": {
     "framework_tests": {
-      "passed": 21,
-      "total": 21,
+      "passed": 30,
+      "total": 30,
       "status": "PASSED"
     },
     "adversarial_tests": {
-      "passed": 8,
-      "total": 8,
+      "passed": 11,
+      "total": 11,
       "status": "PASSED"
     },
     "ctest_suite": {
       "targets_passed": 6,
       "targets_total": 6,
+      "status": "PASSED"
+    },
+    "python_platform_tests": {
+      "passed": 15,
+      "total": 15,
+      "status": "PASSED"
+    },
+    "scheduler_tests": {
+      "passed": 25,
+      "total": 25,
       "status": "PASSED"
     },
     "reproducibility_evidence_test": {
@@ -120,7 +127,17 @@
     "sat_cnf_encoding": {
       "rate_problems_s": 79.0,
       "description": "Tseitin round transform for 16-round SHA-256"
-    }
+    },
+    "sat_encoding": {
+      "rounds_17_tseitin_vars": 21128,
+      "rounds_17_tseitin_clauses": 68552,
+      "rounds_17_xor_carrysave_vars": 15511,
+      "rounds_17_xor_carrysave_clauses": 30835,
+      "variable_reduction_pct": -27,
+      "clause_reduction_pct": -55,
+      "description": "Measured at round 17; see reports/preimage_encoding_compare.md"
+    },
+    "deepest_verified_preimage_rounds": 18
   },
   "solvers_detected": {
     "cadical": "3.0.1 (WSL2 / native)",

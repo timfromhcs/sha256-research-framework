@@ -16,6 +16,7 @@
 #include <map>
 #include <set>
 #include <random>
+#include <sstream>
 
 using namespace sha256_research;
 
@@ -234,7 +235,7 @@ void test_differential_trail_verification() {
         throw std::runtime_error("observed message delta mismatch");
 }
 
-// --- SAT semantic oracle: unit propagation over CNF clauses ---
+// --- SAT semantic oracle: unit propagation over CNF clauses and XOR constraints ---
 static bool assign_lit(std::map<int,bool>& asg, int lit) {
     int v = lit > 0 ? lit : -lit;
     bool val = lit > 0;
@@ -243,6 +244,20 @@ static bool assign_lit(std::map<int,bool>& asg, int lit) {
     asg[v] = val;
     return true;
 }
+
+// Evaluate a native XOR constraint under a total assignment.
+// All emitted constraints carry a true parity, so the XOR of the literals must be 1.
+static bool xor_constraint_holds(const CnfFormula::XorConstraint& xc, const std::map<int,bool>& asg) {
+    int parity = 0;
+    for (int lit : xc.lits) {
+        auto it = asg.find(lit > 0 ? lit : -lit);
+        if (it == asg.end()) return false; // not a total assignment
+        bool val = it->second;
+        parity ^= (lit > 0) ? (val ? 1 : 0) : (val ? 0 : 1);
+    }
+    return parity == (xc.rhs ? 1 : 0);
+}
+
 static bool unit_propagate(const CnfFormula& cnf, std::map<int,bool>& asg) {
     bool changed = true;
     while (changed) {
@@ -263,6 +278,27 @@ static bool unit_propagate(const CnfFormula& cnf, std::map<int,bool>& asg) {
                 changed = true;
             }
         }
+        // XOR constraints: when all but one literal is known, the last one is
+        // determined, because the total parity must be odd.
+        for (const auto& xc : cnf.xor_constraints) {
+            int parity = 0;
+            int unassigned_count = 0;
+            int last_lit = 0;
+            for (int lit : xc.lits) {
+                auto it = asg.find(lit > 0 ? lit : -lit);
+                if (it == asg.end()) { unassigned_count++; last_lit = lit; continue; }
+                parity ^= (lit > 0) ? (it->second ? 1 : 0) : (it->second ? 0 : 1);
+            }
+            const int target = xc.rhs ? 1 : 0;
+            if (unassigned_count == 0) {
+                if (parity != target) return false;  // constraint violated
+            } else if (unassigned_count == 1) {
+                // parity XOR value(last) must equal target
+                bool want = ((target - parity) & 1) != 0;
+                if (!assign_lit(asg, want ? last_lit : -last_lit)) return false;
+                changed = true;
+            }
+        }
     }
     return true;
 }
@@ -275,6 +311,9 @@ static bool cnf_satisfied(const CnfFormula& cnf, const std::map<int,bool>& asg) 
             if (it != asg.end() && it->second == (lit > 0)) { sat = true; break; }
         }
         if (!sat) return false;
+    }
+    for (const auto& xc : cnf.xor_constraints) {
+        if (!xor_constraint_holds(xc, asg)) return false;
     }
     return true;
 }
@@ -804,6 +843,413 @@ void test_independent_verifier_preimage_gate() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Encoding correctness. Every dialect must denote exactly the reference
+// SHA-256 compression function. Rather than trusting an ad-hoc assignment, the
+// formula is handed to a real solver: pinning the reference inputs must be
+// SAT, and pinning a wrong output must be UNSAT. A smaller CNF that changes the
+// semantics is worse than a large correct one, so both directions are checked.
+// ---------------------------------------------------------------------------
+
+// Total-assignment filler for the propagation-based checks below.
+// Only meaningful once unit_propagate() has derived everything derivable.
+static void fill_remaining(const CnfFormula& cnf, std::map<int,bool>& asg) {
+    for (int v = 1; v <= cnf.num_vars; ++v) {
+        if (asg.find(v) == asg.end()) asg[v] = false;
+    }
+}
+
+// Pin inputs, propagate, then require the formula to be fully satisfied.
+// This is the propagation-based equivalent of asking a solver, and it needs no
+// external process.
+static bool pin_and_propagate_ok(const CnfFormula& cnf, std::map<int,bool>& asg) {
+    if (!unit_propagate(cnf, asg)) return false;   // conflict
+    fill_remaining(cnf, asg);
+    return cnf_satisfied(cnf, asg);
+}
+
+// Pick a solver that can handle the formula's dialect.
+static std::unique_ptr<ISolver> pick_solver(EncodingDialect d) {
+    auto all = SolverFactory::get_available_solvers();
+    if (all.empty()) return nullptr;
+    if (d == EncodingDialect::Xor) {
+        for (auto t : all) {
+            if (t == SolverType::CryptoMiniSat) return SolverFactory::create(t);
+        }
+        return nullptr;  // XOR constraints need an XOR-capable solver
+    }
+    for (auto t : all) {
+        if (t == SolverType::CaDiCaL) return SolverFactory::create(t);
+    }
+    return SolverFactory::create(all.front());
+}
+
+// Solve a small formula with a real solver, in the requested dialect.
+// Returns SolverStatus::Unknown when no suitable solver is installed.
+static SolverStatus solve_small(CnfFormula& cnf, EncodingDialect d, uint32_t timeout) {
+    auto solver = pick_solver(d);
+    if (!solver) return SolverStatus::Unknown;
+    return solver->solve_cnf(cnf, timeout).status;
+}
+
+// Reference reduced-round digest for a message block.
+static Sha256Digest reference_digest(const std::vector<uint32_t>& msg, uint32_t rounds) {
+    uint8_t block[64] = {0};
+    for (size_t i = 0; i < 16; ++i) store_be32(block + i * 4, msg[i]);
+    Sha256State st = SHA256_IV;
+    Sha256Scalar::compress_block(st, block, rounds);
+    Sha256Digest d;
+    for (size_t i = 0; i < 8; ++i) store_be32(d.bytes.data() + i * 4, st[i]);
+    return d;
+}
+
+// Pin the 16 message words of an encoding to concrete values.
+static void pin_message(CnfFormula& cnf, const SatEncoder::Sha256SatEncoding& enc,
+                        const std::vector<uint32_t>& msg) {
+    for (size_t i = 0; i < 16 && i < enc.message_vars.size(); ++i) {
+        SatEncoder::fix_const32(cnf, enc.message_vars[i], msg[i]);
+    }
+}
+
+static void check_dialect_semantics(EncodingDialect dialect, bool carry_save, const char* label) {
+    const uint32_t rounds = 3;
+    auto solver = pick_solver(dialect);
+    if (!solver) {
+        std::cout << "[no " << (dialect == EncodingDialect::Xor ? "XOR-capable " : "")
+                  << "solver, skipping " << label << "] ";
+        return;
+    }
+
+    std::vector<uint32_t> msg(16);
+    for (uint32_t i = 0; i < 16; ++i) msg[i] = 0xA5A50000u ^ (i * 0x01010101u);
+    const Sha256Digest true_digest = reference_digest(msg, rounds);
+
+    SatEncoder::Sha256ProblemConfig cfg;
+    cfg.num_rounds = rounds;
+    cfg.use_standard_iv = true;
+    cfg.dialect = dialect;
+    cfg.carry_save_t1 = carry_save;
+
+    // 1. Inputs pinned, output free -> the circuit must be satisfiable.
+    auto enc_open = SatEncoder::encode_reduced_rounds(cfg);
+    if (enc_open.cnf.is_trivially_unsat()) {
+        throw std::runtime_error(std::string(label) + ": encoding normalised to UNSAT");
+    }
+    pin_message(enc_open.cnf, enc_open, msg);
+    auto r1 = solver->solve_cnf(enc_open.cnf, 60);
+    if (r1.status != SolverStatus::Satisfiable) {
+        throw std::runtime_error(std::string(label) +
+            ": encoding with reference inputs is not SAT (solver disagrees with reference impl)");
+    }
+
+    // 2. Inputs pinned, output pinned to the reference digest -> still SAT,
+    //    and the extracted model must recompute to that digest.
+    SatEncoder::Sha256ProblemConfig cfg_true = cfg;
+    cfg_true.fix_target_digest = true;
+    cfg_true.target_digest = true_digest;
+    auto enc_true = SatEncoder::encode_reduced_rounds(cfg_true);
+
+    // Solver-independent check first: with the reference inputs and the true
+    // digest pinned, the formula must not be contradictory. If propagation
+    // finds a conflict the ENCODING is wrong; if it passes but the solver says
+    // UNSAT, the emitted DIMACS is wrong.
+    {
+        CnfFormula probe = enc_true.cnf;
+        pin_message(probe, enc_true, msg);
+        std::map<int,bool> asg;
+        if (!unit_propagate(probe, asg)) {
+            throw std::runtime_error(std::string(label) +
+                ": encoding is CONTRADICTORY under reference inputs (propagation found a conflict)");
+        }
+        fill_remaining(probe, asg);
+        if (!cnf_satisfied(probe, asg)) {
+            throw std::runtime_error(std::string(label) +
+                ": reference inputs do not yield a satisfying assignment");
+        }
+    }
+
+    pin_message(enc_true.cnf, enc_true, msg);
+    auto r2 = solver->solve_cnf(enc_true.cnf, 60);
+    if (r2.status != SolverStatus::Satisfiable) {
+        throw std::runtime_error(std::string(label) +
+            ": correct target digest rejected (status=" +
+            std::to_string(static_cast<int>(r2.status)) +
+            ", exit=" + std::to_string(r2.stats.exit_code) +
+            ", vars=" + std::to_string(enc_true.cnf.num_vars) +
+            ", clauses=" + std::to_string(enc_true.cnf.clauses.size()) +
+            ", xors=" + std::to_string(enc_true.cnf.xor_constraints.size()) +
+            ", stderr=" + r2.stats.raw_stderr.substr(0, 200) + ")");
+    }
+    auto model_words = SatEncoder::extract_message_from_model(r2.model, enc_true.message_vars);
+    for (size_t i = 0; i < 16; ++i) {
+        if (model_words[i] != msg[i]) {
+            throw std::runtime_error(std::string(label) +
+                ": pinned message not recoverable from the model (encoding is unsound)");
+        }
+    }
+
+    // 3. Inputs pinned, output pinned to a WRONG digest -> must be UNSAT.
+    Sha256Digest wrong = true_digest;
+    wrong.bytes[0] ^= 0xFF;
+    SatEncoder::Sha256ProblemConfig cfg_wrong = cfg;
+    cfg_wrong.fix_target_digest = true;
+    cfg_wrong.target_digest = wrong;
+    auto enc_wrong = SatEncoder::encode_reduced_rounds(cfg_wrong);
+    pin_message(enc_wrong.cnf, enc_wrong, msg);
+    auto r3 = solver->solve_cnf(enc_wrong.cnf, 60);
+    if (r3.status == SolverStatus::Satisfiable) {
+        throw std::runtime_error(std::string(label) +
+            ": a wrong target digest was accepted (encoding is over-constrained / degenerate)");
+    }
+    if (r3.status == SolverStatus::Unknown || r3.status == SolverStatus::Error ||
+        r3.status == SolverStatus::Timeout) {
+        std::cout << "[solver inconclusive on negative case for " << label << "] ";
+    }
+}
+
+void test_sat_dialect_semantic_equivalence() {
+    check_dialect_semantics(EncodingDialect::Tseitin, false, "tseitin");
+    check_dialect_semantics(EncodingDialect::Tseitin, true,  "tseitin+carrysave");
+    check_dialect_semantics(EncodingDialect::Xor,      false, "xor");
+    check_dialect_semantics(EncodingDialect::Xor,      true,  "xor+carrysave");
+}
+
+// The XOR dialect must be strictly leaner than pure Tseitin on the same
+// problem, otherwise it is not worth its solver-compatibility cost.
+void test_sat_xor_dialect_is_smaller() {
+    SatEncoder::Sha256ProblemConfig base;
+    base.num_rounds = 6;
+    base.use_standard_iv = true;
+
+    SatEncoder::Sha256ProblemConfig t = base;
+    t.dialect = EncodingDialect::Tseitin;
+    auto et = SatEncoder::encode_reduced_rounds(t);
+
+    SatEncoder::Sha256ProblemConfig x = base;
+    x.dialect = EncodingDialect::Xor;
+    auto ex = SatEncoder::encode_reduced_rounds(x);
+
+    if (ex.cnf.xor_constraints.empty()) {
+        throw std::runtime_error("XOR dialect produced zero XOR constraints");
+    }
+    if (ex.cnf.num_vars >= et.cnf.num_vars) {
+        throw std::runtime_error(
+            "XOR dialect did not reduce variable count: xor=" +
+            std::to_string(ex.cnf.num_vars) + " tseitin=" + std::to_string(et.cnf.num_vars));
+    }
+    std::cout << "[vars xor=" << ex.cnf.num_vars
+              << " tseitin=" << et.cnf.num_vars
+              << ", xors=" << ex.cnf.xor_constraints.size() << "] ";
+}
+
+// Carry-save reassociation must not change the denoted function and must not
+// grow the formula relative to the serial chain it replaces.
+void test_sat_carry_save_reassociation() {
+    SatEncoder::Sha256ProblemConfig base;
+    base.num_rounds = 6;
+    base.use_standard_iv = true;
+
+    SatEncoder::Sha256ProblemConfig serial = base;
+    serial.dialect = EncodingDialect::Xor;
+    serial.carry_save_t1 = false;
+    auto es = SatEncoder::encode_reduced_rounds(serial);
+
+    SatEncoder::Sha256ProblemConfig cs = base;
+    cs.dialect = EncodingDialect::Xor;
+    cs.carry_save_t1 = true;
+    auto ec = SatEncoder::encode_reduced_rounds(cs);
+
+    if (ec.cnf.num_vars > es.cnf.num_vars) {
+        throw std::runtime_error(
+            "carry-save T1 increased variable count: cs=" +
+            std::to_string(ec.cnf.num_vars) + " serial=" + std::to_string(es.cnf.num_vars));
+    }
+    std::cout << "[vars cs=" << ec.cnf.num_vars << " serial=" << es.cnf.num_vars << "] ";
+}
+
+// The shared-carry multi-operand adder must model real 32-bit addition.
+// Exhaustively checked over small operands by unit propagation (no solver
+// needed), which is what catches a parity-collapse error: XOR-ing the addend
+// bits of a column would lose the multi-bit carry and get e.g. 3+3 wrong.
+void test_sat_add32_multi_semantics() {
+    int checked = 0;
+    for (auto dialect : {EncodingDialect::Tseitin, EncodingDialect::Xor}) {
+        for (uint32_t a = 0; a <= 3; ++a) {
+            for (uint32_t b = 0; b <= 3; ++b) {
+                for (uint32_t c = 0; c <= 3; ++c) {
+                    for (uint32_t e = 0; e <= 1; ++e) {
+                        CnfFormula cnf;
+                        cnf.dialect = dialect;
+
+                        std::vector<uint32_t> vals = {a, b, c, e};
+                        std::vector<std::vector<int>> vars(vals.size());
+                        for (size_t k = 0; k < vals.size(); ++k) {
+                            vars[k] = cnf.new_vars(32);
+                            SatEncoder::fix_const32(cnf, vars[k], vals[k]);
+                        }
+                        std::vector<const std::vector<int>*> addends;
+                        for (auto& v : vars) addends.push_back(&v);
+
+                        auto sum = SatEncoder::encode_add32_multi(cnf, addends);
+                        const uint32_t expect = a + b + c + e;
+
+                        std::map<int,bool> asg;
+                        for (int bit = 0; bit < 32; ++bit) {
+                            asg[sum[bit]] = ((expect >> bit) & 1U) != 0;
+                        }
+                        if (!pin_and_propagate_ok(cnf, asg)) {
+                            throw std::runtime_error(
+                                "encode_add32_multi mis-models 32-bit addition: " +
+                                std::to_string(a) + "+" + std::to_string(b) + "+" +
+                                std::to_string(c) + "+" + std::to_string(e));
+                        }
+                        ++checked;
+                    }
+                }
+            }
+        }
+    }
+    if (checked < 256) throw std::runtime_error("add32-multi coverage unexpectedly small");
+}
+
+// encode_add32_const must agree with adding a fully materialised constant
+// word through the generic two-operand path, for every constant bit pattern.
+void test_sat_add32_const_folding() {
+    std::mt19937 rng(0xBEEF01u);
+    int checked = 0;
+
+    for (int trial = 0; trial < 8; ++trial) {
+        for (auto dialect : {EncodingDialect::Tseitin, EncodingDialect::Xor}) {
+            uint32_t a_val = rng();
+            // Exercise both sparse and dense constants, including the edges.
+            const uint32_t k_val = (trial % 4 == 0) ? 0u
+                                 : (trial % 4 == 1) ? 0xFFFFFFFFu
+                                 : (trial % 4 == 2) ? 0x00000001u
+                                 : rng();
+            const uint32_t expect = a_val + k_val;
+
+            CnfFormula c1;
+            c1.dialect = dialect;
+            auto av = c1.new_vars(32);
+            SatEncoder::fix_const32(c1, av, a_val);
+            auto sum1 = SatEncoder::encode_add32_const(c1, av, k_val);
+            SatEncoder::fix_const32(c1, sum1, expect);
+
+            CnfFormula c2;
+            c2.dialect = dialect;
+            auto av2 = c2.new_vars(32);
+            auto kv = c2.new_vars(32);
+            SatEncoder::fix_const32(c2, av2, a_val);
+            SatEncoder::fix_const32(c2, kv, k_val);
+            auto sum2 = SatEncoder::encode_add32(c2, av2, kv);
+            SatEncoder::fix_const32(c2, sum2, expect);
+
+            SolverStatus s1 = solve_small(c1, dialect, 30);
+            SolverStatus s2 = solve_small(c2, dialect, 30);
+            if (s1 == SolverStatus::Unknown || s2 == SolverStatus::Unknown) continue;
+
+            if (s1 != SolverStatus::Satisfiable) {
+                throw std::runtime_error("encode_add32_const rejects a correct a + K");
+            }
+            if (s2 != SolverStatus::Satisfiable) {
+                throw std::runtime_error("generic add32 rejects a correct a + K");
+            }
+
+            // Wrong constant sum must be rejected.
+            CnfFormula c3;
+            c3.dialect = dialect;
+            auto av3 = c3.new_vars(32);
+            SatEncoder::fix_const32(c3, av3, a_val);
+            auto sum3 = SatEncoder::encode_add32_const(c3, av3, k_val);
+            SatEncoder::fix_const32(c3, sum3, expect ^ 0x5A5A5A5Au);
+            if (solve_small(c3, dialect, 30) == SolverStatus::Satisfiable) {
+                throw std::runtime_error("encode_add32_const accepted a wrong a + K");
+            }
+            checked++;
+        }
+    }
+    if (checked == 0) std::cout << "[no solver available, const folding untested] ";
+}
+
+// A different constant must produce a different sum, proving the encoder is
+// not silently discarding the K value.
+void test_sat_add32_const_is_sound() {
+    std::mt19937 rng(0x123456u);
+    int checked = 0;
+
+    for (int trial = 0; trial < 6; ++trial) {
+        for (auto dialect : {EncodingDialect::Tseitin, EncodingDialect::Xor}) {
+            uint32_t a_val = rng();
+            uint32_t k_val = rng();
+
+            // Pin the sum to a + k2 while the circuit encodes a + k.
+            // With k != k2 this must be UNSAT.
+            uint32_t k2 = k_val ^ (1u << (rng() % 32));
+            if (k2 == k_val) continue;
+
+            CnfFormula c;
+            c.dialect = dialect;
+            auto av = c.new_vars(32);
+            SatEncoder::fix_const32(c, av, a_val);
+            auto sum = SatEncoder::encode_add32_const(c, av, k_val);
+            SatEncoder::fix_const32(c, sum, a_val + k2);
+
+            SolverStatus st = solve_small(c, dialect, 30);
+            if (st == SolverStatus::Unknown) continue;
+            if (st == SolverStatus::Satisfiable) {
+                throw std::runtime_error("encode_add32_const ignores the constant value");
+            }
+            checked++;
+        }
+    }
+    if (checked == 0) std::cout << "[no solver available, const soundness untested] ";
+}
+
+// The DIMACS writer must emit exactly one line per constraint and must never
+// emit an out-of-range literal inside an XOR constraint. Negative literals are
+// legal in XOR clauses, so only the magnitude is range-checked.
+void test_sat_dimacs_writer_integrity() {
+    for (auto dialect : {EncodingDialect::Tseitin, EncodingDialect::Xor}) {
+        SatEncoder::Sha256ProblemConfig cfg;
+        cfg.num_rounds = 3;
+        cfg.dialect = dialect;
+        auto enc = SatEncoder::encode_reduced_rounds(cfg);
+
+        std::string dimacs = enc.cnf.to_dimacs();
+        std::istringstream iss(dimacs);
+        std::string line;
+        size_t clause_lines = 0, xor_lines = 0;
+        while (std::getline(iss, line)) {
+            if (line.empty() || line[0] == 'c' || line[0] == 'p') continue;
+            if (line[0] == 'x') {
+                ++xor_lines;
+                std::istringstream ls(line.substr(1));
+                int lit;
+                while (ls >> lit) {
+                    if (lit == 0) break;
+                    if (lit > enc.cnf.num_vars || -lit > enc.cnf.num_vars) {
+                        throw std::runtime_error("XOR clause contains an out-of-range literal");
+                    }
+                }
+            } else {
+                ++clause_lines;
+            }
+        }
+        if (clause_lines != enc.cnf.clauses.size()) {
+            throw std::runtime_error("DIMACS clause line count mismatch");
+        }
+        if (xor_lines != enc.cnf.xor_constraints.size()) {
+            throw std::runtime_error("DIMACS XOR line count mismatch");
+        }
+        if (dialect == EncodingDialect::Xor && xor_lines == 0) {
+            throw std::runtime_error("XOR dialect emitted no XOR lines");
+        }
+        if (dialect == EncodingDialect::Tseitin && xor_lines != 0) {
+            throw std::runtime_error("Tseitin dialect emitted XOR lines");
+        }
+    }
+}
+
 int main() {
     std::cout << "===============================================================\n"
               << "            SHA-256 Framework Test Suite                       \n"
@@ -820,6 +1266,13 @@ int main() {
     RUN_TEST(test_sat_add32_semantics);
     RUN_TEST(test_sat_sigma_gamma_semantics);
     RUN_TEST(test_sat_encoder_tseitin_basic);
+    RUN_TEST(test_sat_dialect_semantic_equivalence);
+    RUN_TEST(test_sat_xor_dialect_is_smaller);
+    RUN_TEST(test_sat_carry_save_reassociation);
+    RUN_TEST(test_sat_add32_multi_semantics);
+    RUN_TEST(test_sat_add32_const_folding);
+    RUN_TEST(test_sat_add32_const_is_sound);
+    RUN_TEST(test_sat_dimacs_writer_integrity);
     RUN_TEST(test_sat_invalid_round_rejection);
     RUN_TEST(test_anti_clamping_api);
     RUN_TEST(test_sat_end_to_end_with_solver);

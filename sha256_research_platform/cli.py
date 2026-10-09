@@ -78,7 +78,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         hw = probe_hardware()
         counts = db.get_system_counts()
         print("===============================================================")
-        print("    SHA-256 Autonomous Research Platform Status (v3.0.0)      ")
+        print("    SHA-256 Autonomous Research Platform Status (v4.0.0)      ")
         print("===============================================================")
         print(f" CPU:              {hw.cpu_model} ({hw.cpu_cores} cores, {hw.cpu_threads} threads)")
         print(f" RAM:              {hw.total_ram_bytes // (1024*1024)} MB (Budget: {hw.conservative_memory_budget_bytes // (1024*1024)} MB)")

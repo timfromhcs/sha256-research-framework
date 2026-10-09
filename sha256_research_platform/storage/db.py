@@ -110,7 +110,9 @@ CREATE TABLE IF NOT EXISTS verifications (
     digest_b TEXT,
     hamming_distance INTEGER,
     verified_rounds INTEGER,
-    verifier_version TEXT DEFAULT 'v3.0.0-independent',
+    verifier_version TEXT DEFAULT 'v3.1.0-independent',
+    verified_by TEXT DEFAULT 'IndependentVerifier',
+    engine_segregated BOOLEAN DEFAULT 1,
     verified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(candidate_id) REFERENCES candidates(id),
     FOREIGN KEY(experiment_id) REFERENCES experiments(id)
@@ -354,7 +356,11 @@ class DatabaseManager:
                 "digest_b": "TEXT",
                 "hamming_distance": "INTEGER",
                 "verified_rounds": "INTEGER",
-                "verifier_version": "TEXT DEFAULT 'v3.0.0-independent'"
+                "verifier_version": "TEXT DEFAULT 'v3.1.0-independent'",
+                # Provenance columns: an L3 promotion requires a verdict that
+                # names the segregated engine that produced it.
+                "verified_by": "TEXT DEFAULT 'IndependentVerifier'",
+                "engine_segregated": "BOOLEAN DEFAULT 1"
             },
             "artifacts": {
                 "experiment_id": "TEXT",

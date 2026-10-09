@@ -24,6 +24,19 @@ enum class SolverStatus {
     Unknown
 };
 
+// Stable string form, so the result contract carries an unambiguous label and
+// "the solver gave up" is never conflated with "no solution exists".
+inline const char* to_string(SolverStatus s) noexcept {
+    switch (s) {
+        case SolverStatus::Satisfiable: return "SAT";
+        case SolverStatus::Unsatisfiable: return "UNSAT";
+        case SolverStatus::Timeout: return "TIMEOUT";
+        case SolverStatus::Error: return "ERROR";
+        case SolverStatus::Unknown: return "UNKNOWN";
+    }
+    return "UNKNOWN";
+}
+
 struct SolverStatistics {
     SolverStatus status{SolverStatus::Unknown};
     double wall_time_seconds{0.0};

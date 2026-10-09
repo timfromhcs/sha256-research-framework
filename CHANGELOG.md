@@ -2,6 +2,101 @@
 
 All notable changes to the SHA-256 Research Framework will be documented in this file.
 
+## [4.0.0] - 2026-10-09
+
+The headline: **the deepest independently verified preimage moved from 10 rounds to 18**, and the platform can no longer report a verification result that no verifier produced.
+
+### Security Fixes (removal of fabricated verification)
+
+These are correctness fixes, not refactors. Each removed a code path that could
+report success without any cryptographic evidence.
+
+- **`workers/worker.py` no longer fabricates results.** It previously inferred
+  verification by substring-matching C++ stdout (`"[VERIFIED]" in stdout or
+  exit_code == 0`) and, when `sha-research.exe` was absent, synthesised the
+  string `"[VERIFIED] Candidate block matches target digest!"`. Both paths are
+  deleted. The worker now parses a machine-readable result contract and
+  re-verifies every candidate by invoking `sha-verifier` as a subprocess.
+- **`agent/tools.py` no longer declares collisions from input inequality.** The
+  fallback `is_valid = (msg_a_hex == msg_b_hex) is False` is removed; a missing
+  verifier now raises `ToolValidationError`.
+- **`agent/loop.py` no longer pre-assigns L3.** Stage VERIFY recorded trust level
+  `L3` before verification ran. Promotion now happens only after a real
+  `IndependentVerifier` verdict, through `EpistemicTrustManager`.
+- **`agent/trust.py` requires verifier provenance.** A promotion payload must name
+  the segregated `IndependentVerifier` engine; a bare `is_valid: true` is refused.
+  `StandardFullPreimage` additionally requires `actual_rounds == 64`.
+- **Missing toolchain is `INFRA_FAILURE`, not a result.** Distinct from both a
+  verified result and a negative result.
+- **Path sandbox operator-precedence bug fixed.** `read_artifact` used
+  `a or b and c`, permitting traversal. Replaced with `Path.resolve()` plus
+  `relative_to()` containment.
+- **`benchmark_backend` and `analyze_results` no longer return hardcoded values.**
+  Both now measure or derive from recorded data.
+- **Tests that asserted the fabricated outcome were rewritten.** Coverage added for
+  tampered-candidate rejection, missing-binary refusal, and anti-clamping through
+  the verifier bridge.
+
+### Added
+
+- **XOR encoding dialect for the SAT encoder.** Native XOR constraints in
+  CryptoMiniSat's extended DIMACS, with literal normalisation (repeated
+  variables, opposite-sign cancellation, shared TRUE literal for false parity).
+- **Carry-save multi-operand adder (`encode_add32_multi`).** 3:2 compressors that
+  satisfy `a + b + c == sum + 2*carry`, letting `T1 = h + Σ1 + Ch + W + K`
+  collapse from four serial ripple adders into one pass.
+- **Constant folding in `encode_add32_const`.** Replaces a materialised 32-variable
+  constant word plus 32 unit clauses with per-bit AND/OR/negation.
+- **`sha-research preimage` command.** `--rounds --solver --encoding --carry-save
+  --timeout --out`, emitting a machine-readable `RESULT_*` contract including
+  `RESULT_SOLVER_STATUS` so a solver give-up is never confused with `UNSAT`.
+- **`sha-verifier --json` output.** Single-line JSON verdict with a stable schema,
+  so Python consumers parse structure instead of prose. Exit code and parsed
+  verdict are cross-checked for self-consistency.
+- **Hybrid research loop.** `agent/proposals.py` (LLM proposal plane, permanently
+  capped at L0, schema-validated against a closed allowlist, deterministic
+  fallback guaranteeing progress) and `agent/scheduler.py` (deterministic
+  decision plane, sole path to L3).
+- **`tools/measure_scaling.py`.** Emits `reports/preimage_scaling.md` purely from
+  executed runs, with the 2^256 bound stated explicitly and unresolved rounds
+  labelled as unresolved.
+- **Replayable cycle manifests.** Deterministic, timestamp-free JSON under
+  `evidence/cycles/`, with timestamps in a sidecar so replays hash identically.
+- **`verify_preimage_candidate` tool**, symmetric with the collision path.
+- **`tests/test_scheduler.py`** (25 tests) covering the proposal envelope,
+  adversarial LLM output parsing, scheduler escalation rules, and the trust
+  boundary.
+
+### Changed
+
+- **Deepest verified preimage: 10 -> 18 rounds.** Measured with the XOR +
+  carry-save encoding on CryptoMiniSat; round 19 did not resolve within a 240 s
+  budget, which is recorded as unresolved rather than disproven.
+- **CNF size at 17 rounds: −27% variables, −55% clauses** versus pure Tseitin
+  (15511 vars / 30835 clauses against 21128 / 68552).
+- **Measured solve-time growth between 17 and 18 rounds: ~38x.** The report uses
+  the last observed ratio as the asymptotic estimate rather than an average,
+  since early rounds are dominated by solver warm-up.
+- **Version unified at 4.0.0** across `CMakeLists.txt`, `README.md`, and
+  `sha256_research_platform/__init__.py`, which previously disagreed.
+- **Test counts corrected in documentation** to match the code: 30 `sha-tests`
+  (was documented as 21), 11 adversarial (was 8), 7 verifier-negative vectors
+  (was 3).
+- **`verifications` table** gained `verified_by` and `engine_segregated`
+  columns so provenance survives into the database.
+- **`sha-research campaign`** is now dialect-aware and distinguishes exit codes:
+  0 verified, 1 no solution, 2 verification failure.
+
+### Known Limitations (unchanged, restated honestly)
+
+- No full SHA-256 preimage or collision. 2^256 evaluations is a physical bound.
+- No collision encoding, MITM, boomerang, or differential trail search. The
+  `is_collision_problem` flag and `message2_vars` remain declared but unused.
+- The `differential` module remains a placeholder and is not used by any attack
+  path. Two GPU shaders are still not dispatched from C++.
+- The `ml/` trail ranker is trained on synthetic data and is not connected to any
+  attack path.
+
 ## [3.0.0] - 2026-09-13
 
 ### Added

@@ -1,4 +1,4 @@
-# SHA-256 Cryptanalysis Research Framework (v3.0.0)
+# SHA-256 Cryptanalysis Research Framework (v4.0.0)
 
 [![Build (Windows MSVC)](https://github.com/timfromhcs/sha256-research-framework/actions/workflows/ci-build.yml/badge.svg?branch=main)](https://github.com/timfromhcs/sha256-research-framework/actions/workflows/ci-build.yml)
 [![Tests (Windows)](https://github.com/timfromhcs/sha256-research-framework/actions/workflows/ci-test.yml/badge.svg?branch=main)](https://github.com/timfromhcs/sha256-research-framework/actions/workflows/ci-test.yml)
@@ -28,8 +28,90 @@ A headless, local-first autonomous research platform for SHA-256 cryptanalysis w
 > Neither LLM, VLM, nor agent output is ever treated as cryptographic proof. Only the segregated `IndependentVerifier` arbitrates truth.
 
 - **Standard Full SHA-256 (64 rounds)**: **UNBROKEN**. No standard collision or full preimage has ever been discovered or claimed.
-- **Reduced-Round Demonstrations**: Inversions verified on toy/reduced rounds (e.g. 8-round CaDiCaL, 10-round Kissat) for research validation only.
+- **Reduced-Round Demonstrations**: Inversions are verified by the independent reference engine. The deepest preimage this framework has confirmed is **18 rounds** of the compression function (see [`reports/preimage_scaling.md`](reports/preimage_scaling.md)). Round 19 did not resolve within the measured budget — that is a statement about this encoding and this budget, **not** a proof of impossibility.
+- **Why full SHA-256 is out of reach**: A full preimage costs 2^256 ≈ 1.16e77 compression-function evaluations. All Bitcoin mining combined (~1e21 H/s) would need roughly 1e56 years. This is a physical bound, not an implementation gap.
 - **Classification Non-Negotiables**: Reduced-round experiments are never conflated with full SHA-256. Modified or custom-IV experiments are categorized strictly as `SemiFreeStart` or rejected. Near-collisions are triage heuristics, not cryptographic breaks.
+
+---
+
+## Release v4.0.0: Verification Integrity & Encoding Depth
+
+### 1. Single Trust Boundary (no fallback verdicts)
+
+Previous versions of the Python platform could report a verification result that no
+verifier had produced. All of those paths are removed:
+
+- `workers/worker.py` inferred success by substring-matching C++ stdout
+  (`"[VERIFIED]" in stdout`) and, when the binary was missing, **fabricated** a
+  passing result. It now parses a machine-readable result contract and re-verifies
+  every candidate through `sha-verifier`.
+- `agent/tools.py` declared a collision valid purely because two inputs differed.
+  That fallback is deleted; a missing verifier is now a hard error.
+- `agent/loop.py` recorded stage VERIFY as `L3` *before* verification ran. Promotion
+  is now earned, never assumed.
+- A missing or unparseable verifier raises `VerificationUnavailable`. There is no
+  code path from "no evidence" to "verified". A missing research binary is recorded
+  as `INFRA_FAILURE`, which is explicitly not a scientific result.
+
+`EpistemicTrustManager` additionally requires the verdict to name the segregated
+`IndependentVerifier` engine; a bare `is_valid: true` is no longer sufficient.
+
+### 2. Leaner SAT Encodings
+
+`src/sat/sat_encoder.cpp` gained two first-class encoding dialects:
+
+- **XOR dialect** — native XOR constraints in CryptoMiniSat's extended DIMACS, so
+  the solver can run Gaussian elimination over the GF(2) subsystem instead of
+  clause-level propagation. SHA-256's σ/γ functions and adder sum bits are
+  XOR-dominated, which makes this the single largest win.
+- **Carry-save T1** — `T1 = h + Σ1 + Ch + W + K` is reassociated into one
+  carry-save (3:2 compressor) tree instead of four serial ripple adders.
+
+Measured at 17 rounds (`reports/preimage_encoding_compare.md`):
+
+| Configuration | CNF vars | CNF clauses | vs. baseline |
+| :--- | ---: | ---: | :--- |
+| `tseitin` / CaDiCaL | 21128 | 68552 | baseline |
+| `tseitin+cs` / CaDiCaL | 20550 | 72171 | −3% vars |
+| `xor` / CryptoMiniSat | 16616 | 29256 | −21% vars, −57% clauses |
+| `xor+cs` / CryptoMiniSat | **15511** | 30835 | **−27% vars, −55% clauses** |
+
+New CLI surface:
+
+```
+sha-research preimage --rounds N [--solver S] [--encoding xor|tseitin]
+                       [--carry-save] [--timeout T] [--out DIR]
+```
+
+It emits a machine-readable result contract (`RESULT_CANDIDATE`,
+`RESULT_TARGET_DIGEST`, `RESULT_SOLVER_STATUS`, `RESULT_CNF_*`, …) that the Python
+platform consumes instead of scraping prose.
+
+### 3. Hybrid Research Loop
+
+Two planes with a hard trust boundary:
+
+- **Proposal plane** (`agent/proposals.py`) — an LLM may emit candidate
+  configurations. They are schema-validated against a closed allowlist, are
+  permanently capped at trust level **L0**, and the rationale is stored verbatim
+  for audit. A deterministic proposer guarantees forward progress if no model is
+  loaded, so the loop can never stall.
+- **Decision plane** (`agent/scheduler.py`) — the *only* component that executes
+  work and the *only* path to L3. Escalation follows measured depth, not model
+  optimism. A solver/model-extraction disagreement is flagged as a **bug** and
+  halts progression. A timeout grows the budget instead of being recorded as a
+  wall. A solver `UNSAT` is distinguished from a solver give-up, because only the
+  former is a proof.
+
+Each cycle writes a deterministic, timestamp-free manifest to
+`evidence/cycles/`, with timestamps in a sidecar so replays hash identically.
+
+### 4. Honest Measurement
+
+`tools/measure_scaling.py` produces `reports/preimage_scaling.md` purely from
+executed runs. It states the 2^256 bound explicitly, labels every unresolved
+round as unresolved rather than disproven, and reports the measured per-round
+growth factor without extrapolating a complexity-theoretic bound.
 
 ---
 
@@ -42,8 +124,8 @@ A headless, local-first autonomous research platform for SHA-256 cryptanalysis w
    - Replaced silent input clamping (`std::min(rounds, 64)`) with strict, explicit validation in both CLI options and SAT encoders.
    - Any request with `rounds < 1` or `rounds > 64` throws an explicit invalid argument exception.
 3. **Comprehensive Layered Test Suite (6 CTest Targets, 100% Pass Rate)**:
-   - **`sha-tests` (21 tests)**: Exhaustive primitives, padding boundary sweep (0..130 bytes, 55, 56, 64, 65, 119, 120, 128 bytes), streaming chunked hashing, backend equivalence, exact search partitioning, Tseitin SAT semantics, solver replay, and verifier differential cross-checks.
-   - **`sha-adversarial-tests` (8 tests)**: 1-bit tampering detection, identical input spoofing rejection, artifact hash tampering, custom-IV misclassification prevention, reduced-round conflation rejection, zero-round rejection, over-claimed rounds rejection, and forged metadata override rejection.
+   - **`sha-tests` (30 tests)**: Exhaustive primitives, padding boundary sweep, streaming chunked hashing, backend equivalence, exact search partitioning, SAT gate and adder semantics, **encoding-dialect semantic equivalence**, solver replay, and verifier differential cross-checks.
+   - **`sha-adversarial-tests` (11 tests)**: 1-bit tampering detection, identical input spoofing rejection, artifact hash tampering, custom-IV misclassification prevention, reduced-round conflation rejection, zero-round rejection, over-claimed rounds rejection, forged metadata override rejection (collision and preimage), and preimage tamper rejection.
    - **`test-million-a`**: NIST CAVP long message test (1,000,000 `'a'` characters) verifying both scalar, optimized, and independent verifier backends against `cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0`.
    - **`test-determinism`**: Dedicated determinism test verifying bit-for-bit output invariance across repeated runs (runs A, B, C) across all engines, parallel batch hashing, SAT encodings, and differential trails.
    - **`verifier-kat`**: NIST Known-Answer Test suite executed via standalone `sha-verifier.exe`.
@@ -60,12 +142,14 @@ A headless, local-first autonomous research platform for SHA-256 cryptanalysis w
 
 | Target Name | Test Count | Description | Status |
 | :--- | :--- | :--- | :--- |
-| `sha-tests` | 21 Unit Tests | Primitives, padding sweep, differential, Tseitin SAT, solver replay | **PASS** |
-| `sha-adversarial-tests` | 8 Adversarial Tests | Hostile tamper detection, fake claims, metadata forgery guardrails | **PASS** |
+| `sha-tests` | 30 Unit Tests | Primitives, padding sweep, differential, SAT dialects, adder semantics, solver replay | **PASS** |
+| `sha-adversarial-tests` | 11 Adversarial Tests | Hostile tamper detection, fake claims, metadata forgery guardrails | **PASS** |
 | `test-million-a` | 1 NIST KAT | NIST 1,000,000 `'a'` character vector verification | **PASS** |
 | `test-determinism` | 8 Invariance Tests | Multi-run (A/B/C) determinism for CPU, threads, SAT, verifier | **PASS** |
 | `verifier-kat` | 4 Vectors | Standalone independent FIPS 180-4 reference engine KATs | **PASS** |
-| `verifier-negative` | 3 Hostile Vectors | Negative rejection gates for $M_1 = M_2$, altered digests, custom IVs | **PASS** |
+| `verifier-negative` | 7 Hostile Vectors | Negative rejection gates: identical inputs, altered digests, custom IVs, round-count abuse | **PASS** |
+| `tests/test_v3_platform.py` | 15 Tests | Platform entities, anti-clamping, trust validation, verification integrity, REST API | **PASS** |
+| `tests/test_scheduler.py` | 25 Tests | Proposal envelope, LLM output parsing, scheduler escalation rules, trust boundary | **PASS** |
 | `verify_evidence.py` | Full Evidence DB | SHA-256 hash manifest verification across all experiment artifacts | **PASS** |
 
 ---

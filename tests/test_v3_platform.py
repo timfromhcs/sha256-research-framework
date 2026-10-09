@@ -1,5 +1,6 @@
 """
-Comprehensive Automated Test Suite for SHA-256 Research Platform v3.0
+Comprehensive Automated Test Suite for SHA-256 Research Platform v4.0
+
 Validates:
   1. SQLite Research State & 19 Entities
   2. Crash Recovery & Orphaned Job Detection
@@ -14,6 +15,11 @@ Validates:
   11. Autonomous Research Campaign (9-Stage Cycle)
   12. Headless REST API Endpoints & Status Codes
   13. Web Frontend UI Client Serving
+  14. Verification Integrity: no fallback may ever synthesise a verdict
+
+Tests 8, 11 and the verification-integrity group require the compiled C++
+binaries. When they are absent those tests assert the *infrastructure
+failure* path rather than a fabricated pass.
 """
 
 import os
@@ -39,6 +45,9 @@ from sha256_research_platform.models.hardware import probe_hardware
 from sha256_research_platform.vlm import VisualLanguageObserver
 from sha256_research_platform.rag import LocalResearchMemory
 from sha256_research_platform.workers import ResearchWorkerPool
+from sha256_research_platform.workers.worker import (
+    VerifierBridge, BinaryResolution, VerificationUnavailable
+)
 from sha256_research_platform.recovery import CrashRecoveryManager
 from sha256_research_platform.evidence import EvidenceStore, sha256_file
 from sha256_research_platform.agent import (
@@ -46,6 +55,16 @@ from sha256_research_platform.agent import (
     TrustLevel, EpistemicTrustManager, EpistemicIntegrityError
 )
 from sha256_research_platform.api.app import app
+
+
+def _binaries_available():
+    return (
+        BinaryResolution.locate() is not None
+        and VerifierBridge().locate() is not None
+    )
+
+
+BINARIES_AVAILABLE = _binaries_available()
 
 
 class TestV3Platform(unittest.TestCase):
@@ -221,6 +240,7 @@ class TestV3Platform(unittest.TestCase):
             self.assertIn(r.trust_level, ["L0", "L1", "L2", "L3", "L4", "L5"])
 
     # 8. Test Worker Execution Lifecycle & Evidence Generation
+    @unittest.skipUnless(BINARIES_AVAILABLE, "C++ binaries not built")
     def test_08_worker_execution_lifecycle_and_evidence(self):
         self.worker_pool.start()
         exp_id = f"exp_test_unit_{int(time.time()*1000)}"
@@ -238,17 +258,106 @@ class TestV3Platform(unittest.TestCase):
 
         conn = self.db.get_connection()
         row = conn.execute("SELECT status, outcome, classification FROM experiments WHERE id = ?", (exp_id,)).fetchone()
+        ver = conn.execute(
+            "SELECT is_valid, classification, verified_by, digest_a, digest_b "
+            "FROM verifications WHERE experiment_id = ?", (exp_id,)
+        ).fetchone()
         conn.close()
 
         self.assertEqual(row["status"], "COMPLETED")
+        # Outcome must follow the real verifier verdict, not the solver's exit code.
         self.assertEqual(row["outcome"], "CONFIRMED")
-        self.assertEqual(row["classification"], "ReducedRoundPreimageVerified")
+
+        # The verdict must come from the segregated engine and actually match.
+        self.assertIsNotNone(ver, "No independent verification record was written")
+        self.assertTrue(ver["is_valid"])
+        self.assertEqual(ver["verified_by"], "IndependentVerifier")
+        self.assertEqual(ver["classification"], "ReducedRoundPreimage")
+        self.assertEqual(ver["digest_a"], ver["digest_b"],
+                         "Verified preimage must have zero Hamming distance")
 
         # Verify evidence package files
         exp_dir = os.path.join(self.evidence_dir, "experiments", exp_id)
         self.assertTrue(os.path.exists(exp_dir))
         for req_file in ["request.json", "environment.json", "stdout.log", "stderr.log", "result.json", "verification.json", "manifest.json", "report.md"]:
             self.assertTrue(os.path.exists(os.path.join(exp_dir, req_file)), f"Missing {req_file}")
+
+    # 8b. Missing toolchain must yield an infrastructure failure, never a pass
+    def test_08b_missing_binary_is_infrastructure_failure(self):
+        """A missing research binary must NOT be silently converted into a result."""
+        self.worker_pool.start()
+        pool = ResearchWorkerPool(
+            db=self.db,
+            max_workers=1,
+            evidence_store=self.evidence_store,
+            verifier=VerifierBridge(),
+        )
+        # Force an unresolvable binary path.
+        original = os.environ.get("SHA_RESEARCH_BIN")
+        os.environ["SHA_RESEARCH_BIN"] = os.path.join(self.temp_dir, "definitely_absent.exe")
+        try:
+            pool.start()
+            exp_id = f"exp_nobin_{int(time.time()*1000)}"
+            pool.enqueue_experiment(exp_id, "H1", rounds=4, solver="cadical", timeout=30)
+            pool.job_queue.join()
+            time.sleep(0.2)
+
+            conn = self.db.get_connection()
+            row = conn.execute(
+                "SELECT status, outcome, classification FROM experiments WHERE id = ?",
+                (exp_id,),
+            ).fetchone()
+            conn.close()
+
+            self.assertIsNotNone(row)
+            self.assertEqual(row["status"], "FAILED")
+            self.assertEqual(row["outcome"], "INFRA_FAILURE")
+            self.assertEqual(row["classification"], "InfrastructureError")
+            self.assertNotEqual(row["outcome"], "CONFIRMED")
+        finally:
+            pool.stop()
+            if original is None:
+                os.environ.pop("SHA_RESEARCH_BIN", None)
+            else:
+                os.environ["SHA_RESEARCH_BIN"] = original
+
+    # 8c. Tampered candidate must be rejected by the verifier
+    @unittest.skipUnless(BINARIES_AVAILABLE, "C++ binaries not built")
+    def test_08c_tampered_candidate_is_rejected(self):
+        """Proves the verification gate is load-bearing, not decorative."""
+        v = VerifierBridge()
+
+        # An all-zero block against an all-ones target must be rejected.
+        block = bytes(64)
+        target = "ff" * 32
+        verdict = v.verify_preimage(block, target, 8)
+        self.assertFalse(verdict["is_valid"])
+        self.assertEqual(verdict["classification"], "Invalid")
+        self.assertGreater(verdict["hamming_distance"], 0)
+        self.assertEqual(verdict["verifier_engine"], "IndependentVerifier")
+
+    # 8d. Verifier bridge refuses to answer without a binary
+    def test_08d_verifier_refuses_without_binary(self):
+        original = os.environ.get("SHA_VERIFIER_BIN")
+        os.environ["SHA_VERIFIER_BIN"] = os.path.join(self.temp_dir, "absent_verifier.exe")
+        try:
+            v = VerifierBridge()
+            self.assertIsNone(v.locate())
+            with self.assertRaises(VerificationUnavailable):
+                v.verify_preimage(bytes(64), "00" * 32, 8)
+            with self.assertRaises(VerificationUnavailable):
+                v.verify_preimage(bytes(64), "00" * 32, 0)     # anti-clamping
+            with self.assertRaises(VerificationUnavailable):
+                v.verify_preimage(bytes(64), "00" * 32, 65)    # anti-clamping
+            with self.assertRaises(VerificationUnavailable):
+                v.verify_preimage(b"\x00" * 32, "00" * 32, 8)  # wrong block length
+            with self.assertRaises(VerificationUnavailable):
+                v.verify_preimage(bytes(64), "00" * 8, 8)      # malformed target
+        finally:
+            if original is None:
+                os.environ.pop("SHA_VERIFIER_BIN", None)
+            else:
+                os.environ["SHA_VERIFIER_BIN"] = original
 
     # 9. Test Agent Tool Registry & Sandboxing
     def test_09_agent_tool_registry_and_sandboxing(self):
@@ -276,11 +385,40 @@ class TestV3Platform(unittest.TestCase):
         with self.assertRaises(EpistemicIntegrityError):
             EpistemicTrustManager.validate_promotion("L2", "L3", {"is_valid": False})
 
-        # Valid verdict passes
-        valid_verdict = {"is_valid": True, "classification": "ReducedRoundCollision", "actual_rounds": 16}
+        # A bare boolean is NOT sufficient: provenance must name the segregated engine.
+        with self.assertRaises(EpistemicIntegrityError):
+            EpistemicTrustManager.validate_promotion(
+                "L2", "L3", {"is_valid": True, "classification": "ReducedRoundPreimage"}
+            )
+        with self.assertRaises(EpistemicIntegrityError):
+            EpistemicTrustManager.validate_promotion(
+                "L2", "L3", {"is_valid": True, "classification": "ReducedRoundPreimage",
+                             "verified_by": "SomeOtherProcess"}
+            )
+
+        # Valid verdict with provenance passes
+        valid_verdict = {
+            "is_valid": True,
+            "classification": "ReducedRoundCollision",
+            "actual_rounds": 16,
+            "verified_by": "IndependentVerifier",
+        }
         self.assertTrue(EpistemicTrustManager.validate_promotion("L2", "L3", valid_verdict))
 
+        # Full-claim classifications require exactly 64 rounds
+        with self.assertRaises(EpistemicIntegrityError):
+            EpistemicTrustManager.validate_promotion("L2", "L3", {
+                "is_valid": True, "classification": "StandardFullCollision",
+                "actual_rounds": 16, "verified_by": "IndependentVerifier",
+            })
+        with self.assertRaises(EpistemicIntegrityError):
+            EpistemicTrustManager.validate_promotion("L2", "L3", {
+                "is_valid": True, "classification": "StandardFullPreimage",
+                "actual_rounds": 32, "verified_by": "IndependentVerifier",
+            })
+
     # 11. Test Autonomous Research Campaign (9-Stage Cycle)
+    @unittest.skipUnless(BINARIES_AVAILABLE, "C++ binaries not built")
     def test_11_autonomous_campaign_cycle(self):
         campaign = AutonomousResearchCampaign(db=self.db, tool_registry=self.tools, worker_pool=self.worker_pool)
         cycle_result = campaign.run_cycle(target_rounds=4, solver="cadical")
@@ -292,7 +430,15 @@ class TestV3Platform(unittest.TestCase):
         for stage in expected_stages:
             self.assertIn(stage, cycle_result["stages"], f"Missing stage: {stage}")
 
-        self.assertTrue(cycle_result["stages"]["VERIFY"]["verified"])
+        verify_stage = cycle_result["stages"]["VERIFY"]
+        self.assertTrue(verify_stage["verified"])
+        # Promotion must be earned via a real IndependentVerifier verdict.
+        self.assertEqual(verify_stage["trust_level"], "L3")
+        self.assertGreaterEqual(verify_stage["independent_verdicts"], 1)
+
+        # Escalation only follows a verified result.
+        self.assertEqual(cycle_result["stages"]["DECIDE_NEXT_STEP"]["decision"], "escalate")
+        self.assertEqual(cycle_result["trust_level"], "L3")
 
         # Clean up any transient exp_campaign directories
         exp_base = "evidence/experiments"
