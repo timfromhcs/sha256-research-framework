@@ -468,7 +468,7 @@ void test_sat_encoder_tseitin_basic() {
         SatEncoder::Sha256ProblemConfig cfg2;
         cfg2.num_rounds = 1;
         cfg2.use_standard_iv = true;
-        for (int i = 0; i < 16; ++i) cfg2.fixed_message_words.push_back(W[i]);
+        for (int i = 0; i < 16; ++i) cfg2.fixed_words.emplace_back(static_cast<uint32_t>(i), W[i]);
         auto enc2 = SatEncoder::encode_reduced_rounds(cfg2);
         // Message words fixed -> propagation must not conflict.
         std::map<int,bool> asg;
@@ -1250,6 +1250,217 @@ void test_sat_dimacs_writer_integrity() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Cube-and-Conquer primitives.
+//
+// The blocking clause is what makes Cube-and-Conquer sound: a cube may only be
+// pruned after it is proven UNSAT. If the clause were wrong the search would
+// silently discard live regions and could "prove" a false nonexistence claim,
+// so these tests check disjointness, coverage and exact exclusion.
+// ---------------------------------------------------------------------------
+
+void test_cube_partition_is_disjoint_and_total() {
+    const int k = 6;
+    CnfFormula base;
+    std::vector<int> coords = base.new_vars(k);
+
+    const auto cubes = CubePartition::enumerate(coords, 1u << k);
+    if (cubes.size() != (1u << k)) {
+        throw std::runtime_error("cube enumeration did not produce 2^k cubes");
+    }
+
+    // Every cube pins each coordinate to a distinct literal.
+    for (size_t c = 0; c < cubes.size(); ++c) {
+        if (cubes[c].size() != coords.size()) {
+            throw std::runtime_error("cube has wrong arity");
+        }
+        for (size_t j = 0; j < coords.size(); ++j) {
+            bool expected_positive = ((c >> j) & 1) != 0;
+            int lit = cubes[c][j];
+            if ((lit > 0) != expected_positive || std::abs(lit) != coords[j]) {
+                throw std::runtime_error("cube literal does not pin its coordinate");
+            }
+        }
+    }
+
+    // Disjointness: no literal assignment satisfies two different cubes.
+    for (size_t a = 0; a < cubes.size(); ++a) {
+        for (size_t b = a + 1; b < cubes.size(); ++b) {
+            bool contradicts = false;
+            for (size_t j = 0; j < coords.size(); ++j) {
+                if (cubes[a][j] == -cubes[b][j]) { contradicts = true; break; }
+            }
+            if (!contradicts) {
+                throw std::runtime_error("two cubes are not disjoint");
+            }
+        }
+    }
+}
+
+void test_cube_blocking_clause_excludes_exactly_its_cube() {
+    const int k = 4;
+    CnfFormula base;
+    std::vector<int> coords = base.new_vars(k);
+    const auto cubes = CubePartition::enumerate(coords, 1u << k);
+
+    for (size_t c = 0; c < cubes.size(); ++c) {
+        std::vector<int> blocking = CubePartition::blocking_clause(coords, c);
+        if (blocking.size() != coords.size()) {
+            throw std::runtime_error("blocking clause has wrong arity");
+        }
+
+        // The blocking clause must be satisfied by every cube except its own.
+        for (size_t other = 0; other < cubes.size(); ++other) {
+            bool clause_satisfied = false;
+            for (size_t j = 0; j < blocking.size(); ++j) {
+                for (int lit : cubes[other]) {
+                    if (lit == blocking[j]) { clause_satisfied = true; break; }
+                }
+                if (clause_satisfied) break;
+            }
+            if (other == c && clause_satisfied) {
+                throw std::runtime_error("blocking clause does NOT exclude its own cube");
+            }
+            if (other != c && !clause_satisfied) {
+                throw std::runtime_error("blocking clause wrongly excludes another cube");
+            }
+        }
+    }
+}
+
+void test_cube_enumeration_respects_cap() {
+    CnfFormula base;
+    std::vector<int> coords = base.new_vars(10);
+    if (CubePartition::enumerate(coords, 5).size() != 5) {
+        throw std::runtime_error("cube enumeration ignored the cap");
+    }
+    if (!CubePartition::enumerate(coords, 0).empty()) {
+        throw std::runtime_error("zero cap must yield no cubes");
+    }
+}
+
+// Assumption solving must equal solving the formula with those literals pinned.
+// Checked on a formula where the answer is determined by the assumptions.
+void test_solve_under_assumptions_pins_literals() {
+    auto solver = SolverFactory::create(SolverType::CaDiCaL);
+    if (!solver || !solver->is_available()) {
+        auto avail = SolverFactory::get_available_solvers();
+        if (avail.empty()) { std::cout << "[no solver, skipping] "; return; }
+        solver = SolverFactory::create(avail.front());
+    }
+
+    // (a or b) and (not a or b): b must be true.
+    CnfFormula cnf;
+    int a = cnf.new_var(), b = cnf.new_var();
+    cnf.add_clause({a, b});
+    cnf.add_clause({-a, b});
+
+    auto res = solver->solve_under_assumptions(cnf, {b}, 30);
+    if (res.status == SolverStatus::Unknown) { std::cout << "[inconclusive] "; return; }
+    if (!res.is_sat()) {
+        throw std::runtime_error("assumption b=true should be satisfiable");
+    }
+    if (res.stats.assumptions_applied != 1) {
+        throw std::runtime_error("assumption count not recorded");
+    }
+    auto it_b = res.model.find(b);
+    if (it_b == res.model.end() || !it_b->second) {
+        throw std::runtime_error("solver model contradicts the assumption");
+    }
+
+    // Contradictory assumptions must be UNSAT.
+    CnfFormula cnf2;
+    int x = cnf2.new_var();
+    cnf2.add_clause({x});
+    auto res2 = solver->solve_under_assumptions(cnf2, {-x}, 30);
+    if (res2.status == SolverStatus::Unsatisfiable) {
+        // Expected: x AND NOT x is unsatisfiable.
+    } else if (res2.status == SolverStatus::Satisfiable) {
+        throw std::runtime_error("contradictory assumptions accepted");
+    }
+}
+
+// fixed_words must pin exactly the listed indices. A positional vector would
+// silently pin every lower index as well, so this checks both directions:
+// a listed word is forced, and an unlisted one is not.
+void test_fixed_words_pins_only_listed_indices() {
+    auto solver = pick_solver(EncodingDialect::Xor);
+    if (!solver) { std::cout << "[no XOR solver, skipping] "; return; }
+
+    const uint32_t rounds = 3;
+    const uint32_t pinned_value = 0xDEADBEEFu;
+    const uint32_t other_value = 0x01234567u;
+
+    SatEncoder::Sha256ProblemConfig cfg;
+    cfg.num_rounds = rounds;
+    cfg.use_standard_iv = true;
+    cfg.dialect = EncodingDialect::Xor;
+    cfg.fixed_words = {{3u, pinned_value}};
+    auto enc = SatEncoder::encode_reduced_rounds(cfg);
+
+    // 1. The listed word is genuinely pinned: the opposite value is UNSAT.
+    {
+        CnfFormula c = enc.cnf;
+        SatEncoder::fix_const32(c, enc.message_vars[3], pinned_value ^ 0x1u);
+        SolverStatus st = solver->solve_cnf(c, 60).status;
+        if (st == SolverStatus::Satisfiable) {
+            throw std::runtime_error(
+                "fixed_words did not pin W[3]: its complement is satisfiable");
+        }
+    }
+
+    // 2. An unlisted word is NOT pinned: it can take either value.
+    for (uint32_t probe : {other_value, other_value ^ 0xFFFFFFFFu}) {
+        CnfFormula c = enc.cnf;
+        SatEncoder::fix_const32(c, enc.message_vars[3], pinned_value);
+        SatEncoder::fix_const32(c, enc.message_vars[5], probe);
+        SolverStatus st = solver->solve_cnf(c, 60).status;
+        if (st != SolverStatus::Satisfiable) {
+            throw std::runtime_error(
+                "fixed_words wrongly pinned an unlisted word (W[5])");
+        }
+    }
+
+    // 3. Pinning W[3] is consistent with the model's own value.
+    {
+        CnfFormula c = enc.cnf;
+        SatEncoder::fix_const32(c, enc.message_vars[3], pinned_value);
+        auto res = solver->solve_cnf(c, 60);
+        if (res.status == SolverStatus::Satisfiable) {
+            auto words = SatEncoder::extract_message_from_model(res.model, enc.message_vars);
+            if (words[3] != pinned_value) {
+                throw std::runtime_error("model disagrees with the pinned word");
+            }
+        }
+    }
+}
+
+// Pinning every message word must make the instance unsatisfiable for a target
+// derived from a different block. This is a genuine, checkable proof path.
+void test_pinning_all_words_proves_unsat() {
+    auto solver = pick_solver(EncodingDialect::Xor);
+    if (!solver) { std::cout << "[no XOR solver, skipping] "; return; }
+
+    const uint32_t rounds = 4;
+    std::vector<uint32_t> msg(16);
+    for (uint32_t i = 0; i < 16; ++i) msg[i] = 0x11223344u ^ (i * 0x01010101u);
+
+    SatEncoder::Sha256ProblemConfig cfg;
+    cfg.num_rounds = rounds;
+    cfg.use_standard_iv = true;
+    cfg.dialect = EncodingDialect::Xor;
+    cfg.fix_target_digest = true;
+    cfg.target_digest = Sha256Digest{};   // deliberately not the true digest
+    for (uint32_t i = 0; i < 16; ++i) cfg.fixed_words.emplace_back(i, msg[i]);
+
+    auto enc = SatEncoder::encode_reduced_rounds(cfg);
+    SolverStatus st = solver->solve_cnf(enc.cnf, 60).status;
+    if (st == SolverStatus::Satisfiable) {
+        throw std::runtime_error(
+            "fully pinned message accepted a target it cannot produce");
+    }
+}
+
 int main() {
     std::cout << "===============================================================\n"
               << "            SHA-256 Framework Test Suite                       \n"
@@ -1273,6 +1484,12 @@ int main() {
     RUN_TEST(test_sat_add32_const_folding);
     RUN_TEST(test_sat_add32_const_is_sound);
     RUN_TEST(test_sat_dimacs_writer_integrity);
+    RUN_TEST(test_cube_partition_is_disjoint_and_total);
+    RUN_TEST(test_cube_blocking_clause_excludes_exactly_its_cube);
+    RUN_TEST(test_cube_enumeration_respects_cap);
+    RUN_TEST(test_solve_under_assumptions_pins_literals);
+    RUN_TEST(test_fixed_words_pins_only_listed_indices);
+    RUN_TEST(test_pinning_all_words_proves_unsat);
     RUN_TEST(test_sat_invalid_round_rejection);
     RUN_TEST(test_anti_clamping_api);
     RUN_TEST(test_sat_end_to_end_with_solver);

@@ -163,6 +163,69 @@ void parse_dimacs_output(const std::string& text, SolverResult& res) {
 
 } // namespace
 
+// Assumption solving: pin each assumption as a unit clause. For
+// F AND A this is semantically identical to passing A to an incremental
+// solver, and it works with every solver that reads DIMACS.
+SolverResult ISolver::solve_under_assumptions(
+    const CnfFormula& cnf,
+    const std::vector<int>& assumptions,
+    uint32_t timeout_seconds)
+{
+    CnfFormula augmented = cnf;
+    for (int lit : assumptions) {
+        if (lit == 0) continue;
+        augmented.add_unit(lit);
+    }
+    SolverResult res = solve_cnf(augmented, timeout_seconds);
+    res.stats.assumptions_applied = assumptions.size();
+    return res;
+}
+
+std::vector<std::vector<int>> CubePartition::enumerate(
+    const std::vector<int>& coordinates,
+    uint32_t max_cubes)
+{
+    std::vector<std::vector<int>> cubes;
+    if (coordinates.empty() || max_cubes == 0) return cubes;
+
+    const size_t k = coordinates.size();
+    const uint64_t total = (k >= 64) ? 0ull : (1ull << k);
+    uint64_t count = total;
+    if (count > max_cubes) count = max_cubes;
+
+    cubes.reserve(static_cast<size_t>(count));
+    for (uint64_t i = 0; i < count; ++i) {
+        cubes.push_back(literals_for(coordinates, i));
+    }
+    return cubes;
+}
+
+std::vector<int> CubePartition::literals_for(
+    const std::vector<int>& coordinates,
+    uint64_t cube)
+{
+    // The satisfying assignment for this cube: each coordinate pinned to its bit.
+    std::vector<int> lits;
+    lits.reserve(coordinates.size());
+    for (size_t j = 0; j < coordinates.size(); ++j) {
+        const bool bit = ((cube >> j) & 1ull) != 0;
+        lits.push_back(bit ? coordinates[j] : -coordinates[j]);
+    }
+    return lits;
+}
+
+std::vector<int> CubePartition::blocking_clause(
+    const std::vector<int>& coordinates,
+    uint64_t cube)
+{
+    // NOT(cube) == OR of the negated literals of the cube's satisfying
+    // assignment. Negating every literal yields the clause that excludes it.
+    // Sound only for a cube that was proven UNSAT.
+    std::vector<int> lits = literals_for(coordinates, cube);
+    for (int& l : lits) l = -l;
+    return lits;
+}
+
 class GenericSatSolver : public ISolver {
 public:
     GenericSatSolver(std::string name, std::string binary, bool run_via_wsl)

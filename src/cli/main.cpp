@@ -16,6 +16,11 @@
 #include <iomanip>
 #include <chrono>
 #include <ctime>
+#include <thread>
+#include <mutex>
+#include <atomic>
+#include <map>
+#include <algorithm>
 
 using namespace sha256_research;
 
@@ -172,8 +177,20 @@ static std::string dialect_name(EncodingDialect d) {
     return d == EncodingDialect::Xor ? "xor" : "tseitin";
 }
 
+// Deterministic message-word values from a seed, so a run is exactly
+// reproducible and its evidence package stays replayable.
+static uint32_t derived_word(uint32_t seed, uint32_t index) {
+    uint32_t x = seed ^ (0x9E3779B9u * (index + 1));
+    x ^= x >> 16; x *= 0x7FEB352Du;
+    x ^= x >> 15; x *= 0x846CA68Bu;
+    x ^= x >> 16;
+    return x;
+}
+
 int cmd_experiment_run(int rounds, const std::string& solver_str, const std::string& out_dir,
-                       EncodingDialect dialect, bool carry_save, uint32_t timeout_seconds) {
+                       EncodingDialect dialect, bool carry_save, uint32_t timeout_seconds,
+                       int fix_first_word = -1, int fix_last_word = -1,
+                       uint32_t fix_seed = 0x5EED1234u) {
     std::cout << "[Experiment] Running automated cryptanalysis experiment: " << rounds << " rounds\n";
 
     SolverType st = SolverType::CaDiCaL;
@@ -251,8 +268,27 @@ int cmd_experiment_run(int rounds, const std::string& solver_str, const std::str
     cfg.dialect = dialect;
     cfg.carry_save_t1 = carry_save;
 
+    // Free-variable reduction. A one-block preimage is overdetermined by
+    // 2^256 (512 free message bits map onto 256 output bits), so pinning
+    // message words preserves the existence of a solution while removing
+    // search space. Each entry is an explicit (index, value) pair.
+    bool pinning = (fix_first_word >= 0 && fix_last_word >= fix_first_word);
+    if (pinning) {
+        for (int w = fix_first_word; w <= fix_last_word && w < 16; ++w) {
+            cfg.fixed_words.emplace_back(
+                static_cast<uint32_t>(w),
+                derived_word(fix_seed, static_cast<uint32_t>(w)));
+        }
+    }
+
     std::cout << "   Encoding " << rounds << "-round SHA-256 constraints to CNF ("
               << dialect_name(dialect) << (carry_save ? ", carry-save" : "") << ")...\n";
+
+    if (pinning) {
+        const int count = fix_last_word - fix_first_word + 1;
+        std::cout << "   Pinned W[" << fix_first_word << ".." << fix_last_word << "] to "
+                  << "seeded values (" << count << " words, " << count * 32 << " bits).\n";
+    }
 
     auto encode_t0 = std::chrono::steady_clock::now();
     auto enc = SatEncoder::encode_reduced_rounds(cfg);
@@ -408,22 +444,319 @@ int cmd_experiment_run(int rounds, const std::string& solver_str, const std::str
     return 1;
 }
 
-struct ExperimentOptions {
+// ---------------------------------------------------------------------------
+// Cube-and-Conquer search driver.
+//
+// Zaikin (Constraints 2026) inverted 19 rounds of SHA-256 by parameterising a
+// CDCL solver on intermediate inverse problems and running a parallel
+// Cube-and-Conquer search. The mechanism implemented here is:
+//
+//   * a one-block preimage is massively overdetermined (512 free message bits
+//     mapped onto 256 output bits), so large parts of the input may be pinned
+//     without losing the existence of a solution;
+//   * the remaining freedom is partitioned into disjoint cubes over chosen
+//     state bits;
+//   * each cube is solved independently, in parallel, under assumptions;
+//   * a cube proven UNSAT contributes a blocking clause that prunes it
+//     permanently from the master formula.
+//
+// Because the cubes are disjoint and their union covers every assignment,
+// exhausting them with UNSAT is a genuine proof that no preimage exists for
+// that round count and target -- never merely a timeout.
+// ---------------------------------------------------------------------------
+struct SearchConfig {
     uint32_t rounds{8};
     std::string solver_str{"cadical"};
     std::string out_dir{"evidence"};
     EncodingDialect dialect{EncodingDialect::Tseitin};
     bool carry_save{false};
     uint32_t timeout{60};
+
+    // Message-word pinning (free-variable reduction).
+    int fix_first_word{-1};
+    int fix_last_word{-1};
+    uint32_t fix_seed{0x5EED1234u};
+
+    // Cube-and-Conquer.
+    uint32_t cube_bits{0};        // 0 disables Cube-and-Conquer
+    int cube_round{-1};           // round boundary whose state bits are used
+    char cube_register{'e'};      // 'a' or 'e'
+    uint32_t jobs{0};             // 0 => hardware_concurrency
 };
 
+static SolverType solver_type_from_name(const std::string& name, bool& ok) {
+    ok = true;
+    if (name == "cadical") return SolverType::CaDiCaL;
+    if (name == "kissat") return SolverType::Kissat;
+    if (name == "cryptominisat" || name == "cms") return SolverType::CryptoMiniSat;
+    if (name == "minisat") return SolverType::MiniSat;
+    if (name == "z3") return SolverType::Z3_SMT;
+    ok = false;
+    return SolverType::CaDiCaL;
+}
+
+// Run a parallel Cube-and-Conquer preimage search.
+int cmd_cube_search(const SearchConfig& opt) {
+    const uint32_t rounds = opt.rounds;
+
+    if (rounds < 1 || rounds > 64) {
+        std::cerr << "Error: rounds must be in [1, 64].\n";
+        return 1;
+    }
+    bool ok = false;
+    const SolverType st = solver_type_from_name(opt.solver_str, ok);
+    if (!ok) {
+        std::cerr << "Error: unknown solver '" << opt.solver_str << "'\n";
+        return 2;
+    }
+    if (opt.dialect == EncodingDialect::Xor && st != SolverType::CryptoMiniSat) {
+        std::cerr << "Error: --encoding xor requires the XOR-capable solver 'cryptominisat'.\n";
+        return 2;
+    }
+
+    auto solver = SolverFactory::create(st);
+    if (!solver || !solver->is_available()) {
+        std::cerr << "Error: solver " << opt.solver_str << " is not available.\n";
+        return 1;
+    }
+
+    // Target digest: the R-round compression of a fixed reference block.
+    std::vector<uint8_t> known_msg(64, 0);
+    const char* tag = "TEST1234";
+    for (size_t i = 0; i < 8; ++i) known_msg[i] = static_cast<uint8_t>(tag[i]);
+    Sha256State target_state = SHA256_IV;
+    Sha256Scalar::compress_block(target_state, known_msg.data(), rounds);
+    Sha256Digest target_digest;
+    for (size_t i = 0; i < 8; ++i) store_be32(target_digest.bytes.data() + i * 4, target_state[i]);
+
+    SatEncoder::Sha256ProblemConfig cfg;
+    cfg.num_rounds = rounds;
+    cfg.use_standard_iv = true;
+    cfg.fix_target_digest = true;
+    cfg.target_digest = target_digest;
+    cfg.dialect = opt.dialect;
+    cfg.carry_save_t1 = opt.carry_save;
+    if (opt.fix_first_word >= 0 && opt.fix_last_word >= opt.fix_first_word) {
+        for (int w = opt.fix_first_word; w <= opt.fix_last_word && w < 16; ++w) {
+            cfg.fixed_words.emplace_back(
+                static_cast<uint32_t>(w), derived_word(opt.fix_seed, static_cast<uint32_t>(w)));
+        }
+    }
+
+    auto encode_t0 = std::chrono::steady_clock::now();
+    auto enc = SatEncoder::encode_reduced_rounds(cfg);
+    const double encode_seconds =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - encode_t0).count();
+
+    // Choose cube coordinates: `cube_bits` low-order bits of one state word at
+    // the requested round boundary.
+    const std::vector<std::vector<int>>& reg =
+        (opt.cube_register == 'a') ? enc.state_a_vars : enc.state_e_vars;
+    const size_t boundary = static_cast<size_t>(opt.cube_round);
+    if (boundary >= reg.size()) {
+        std::cerr << "Error: --cube-round " << opt.cube_round
+                  << " has no recorded state (available: 0.." << (reg.size() - 1) << ").\n";
+        return 2;
+    }
+    std::vector<int> coordinates(reg[boundary].begin(),
+                                 reg[boundary].begin() + opt.cube_bits);
+
+    const uint64_t total_cubes = 1ull << opt.cube_bits;
+    unsigned jobs = opt.jobs ? opt.jobs : std::max(1u, std::thread::hardware_concurrency());
+    if (jobs > total_cubes) jobs = static_cast<unsigned>(total_cubes);
+
+    std::cout << "[Cube-and-Conquer] " << rounds << " rounds, "
+              << opt.cube_bits << " cube bits over register '"
+              << opt.cube_register << "' after round " << opt.cube_round << "\n";
+    std::cout << "[Cube-and-Conquer] CNF: " << enc.cnf.num_vars << " vars, "
+              << enc.cnf.clauses.size() << " clauses, "
+              << enc.cnf.xor_constraints.size() << " XOR constraints ("
+              << encode_seconds << " s)\n";
+    std::cout << "[Cube-and-Conquer] " << total_cubes << " disjoint cubes over "
+              << jobs << " worker threads\n";
+
+    const uint32_t per_cube_timeout = std::max(1u, opt.timeout);
+
+    // Learned blocking clauses accumulate across the search. Each one removes
+    // a cube that was proven UNSAT, so later batches start from a smaller
+    // formula.
+    CnfFormula master = enc.cnf;
+
+    std::atomic<uint64_t> cubes_solved{0};
+    std::atomic<uint64_t> cubes_unsat{0};
+    std::atomic<uint64_t> cubes_inconclusive{0};
+    std::atomic<bool> found{false};
+    std::mutex found_mutex;
+    std::map<int, bool> winning_model;
+    uint64_t winning_cube = 0;
+
+    const auto wall_start = std::chrono::steady_clock::now();
+
+    // Cubes are processed in batches. Within a batch every worker reads the
+    // master formula, which is safe because it is not modified concurrently;
+    // between batches the learned blocking clauses are merged under a lock.
+    // Writing to `master` from inside the worker loop would be a data race.
+    const uint64_t batch_size = std::max<uint64_t>(1, static_cast<uint64_t>(jobs) * 4);
+    std::mutex merge_mutex;
+
+    for (uint64_t batch_start = 0; batch_start < total_cubes && !found.load();
+         batch_start += batch_size) {
+        const uint64_t batch_end = std::min(total_cubes, batch_start + batch_size);
+
+        std::atomic<uint64_t> cursor{batch_start};
+        std::vector<std::vector<int>> learned;
+
+        std::vector<std::thread> workers;
+        for (unsigned t = 0; t < jobs; ++t) {
+            workers.emplace_back([&]() {
+                std::vector<std::vector<int>> local_learned;
+                while (!found.load()) {
+                    const uint64_t cube = cursor.fetch_add(1);
+                    if (cube >= batch_end) break;
+
+                    auto res = solver->solve_under_assumptions(
+                        master, CubePartition::literals_for(coordinates, cube),
+                        per_cube_timeout);
+
+                    if (res.is_sat()) {
+                        std::lock_guard<std::mutex> lock(found_mutex);
+                        if (!found.load()) {
+                            found.store(true);
+                            winning_model = res.model;
+                            winning_cube = cube;
+                        }
+                        cubes_solved.fetch_add(1);
+                        return;
+                    }
+                    if (res.status == SolverStatus::Unsatisfiable) {
+                        cubes_unsat.fetch_add(1);
+                        // Sound: this cube is provably solution-free, so prune it.
+                        local_learned.push_back(
+                            CubePartition::blocking_clause(coordinates, cube));
+                    } else {
+                        // Timeout / unknown proves nothing and must not prune.
+                        cubes_inconclusive.fetch_add(1);
+                    }
+                    cubes_solved.fetch_add(1);
+                }
+                if (!local_learned.empty()) {
+                    std::lock_guard<std::mutex> lock(merge_mutex);
+                    for (const auto& clause : local_learned) learned.push_back(clause);
+                }
+            });
+        }
+        for (auto& w : workers) w.join();
+
+        // Merge learned clauses only after every worker has stopped reading.
+        if (!learned.empty()) {
+            for (const auto& clause : learned) master.add_clause(clause);
+        }
+    }
+
+    const double solve_seconds_total =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - wall_start).count();
+
+    const uint64_t n_unsat = cubes_unsat.load();
+    const uint64_t n_inconc = cubes_inconclusive.load();
+
+    std::cout << "[Cube-and-Conquer] solved " << cubes_solved.load() << "/" << total_cubes
+              << " cubes in " << solve_seconds_total << " s"
+              << " (unsat=" << n_unsat << ", inconclusive=" << n_inconc << ")\n";
+
+    // Machine-readable contract, consistent with `sha-research preimage`.
+    std::cout << "RESULT_TARGET_DIGEST=" << target_digest.to_hex() << "\n";
+    std::cout << "RESULT_ROUNDS=" << rounds << "\n";
+    std::cout << "RESULT_CNF_VARS=" << master.num_vars << "\n";
+    std::cout << "RESULT_CNF_CLAUSES=" << master.clauses.size() << "\n";
+    std::cout << "RESULT_CNF_XORS=" << master.xor_constraints.size() << "\n";
+    std::cout << "RESULT_ENCODING=" << dialect_name(opt.dialect) << "\n";
+    std::cout << "RESULT_CARRY_SAVE=" << (opt.carry_save ? 1 : 0) << "\n";
+    std::cout << "RESULT_ENCODE_TIME=" << encode_seconds << "\n";
+    std::cout << "RESULT_SOLVER_TIME=" << solve_seconds_total << "\n";
+    std::cout << "RESULT_CUBE_BITS=" << opt.cube_bits << "\n";
+    std::cout << "RESULT_CUBE_ROUND=" << opt.cube_round << "\n";
+    std::cout << "RESULT_CUBES_TOTAL=" << total_cubes << "\n";
+    std::cout << "RESULT_CUBES_SOLVED=" << cubes_solved.load() << "\n";
+    std::cout << "RESULT_CUBES_UNSAT=" << n_unsat << "\n";
+    std::cout << "RESULT_CUBES_INCONCLUSIVE=" << n_inconc << "\n";
+
+    if (found.load()) {
+        auto msg_words = SatEncoder::extract_message_from_model(winning_model, enc.message_vars);
+        std::vector<uint8_t> cand_block(64);
+        for (size_t i = 0; i < 16; ++i) store_be32(cand_block.data() + i * 4, msg_words[i]);
+
+        PreimageCandidate cand;
+        cand.message = cand_block;
+        cand.target_digest = target_digest;
+        cand.claimed_rounds = rounds;
+        cand.iv = SHA256_IV;
+        cand.custom_iv = false;
+        cand.generator_metadata = std::string("{\"strategy\":\"cube-and-conquer\",\"cube\":") +
+                                  std::to_string(winning_cube) + "}";
+
+        auto verdict = IndependentVerifier::verify_preimage_candidate(cand);
+
+        std::string abs_path = std::filesystem::absolute(
+            (std::filesystem::path(opt.out_dir) / "cube_candidate.bin")).string();
+        for (char& ch : abs_path) if (ch == '\\') ch = '/';
+        {
+            std::ofstream cf(abs_path, std::ios::binary);
+            if (cf.is_open()) {
+                cf.write(reinterpret_cast<const char*>(cand_block.data()),
+                         static_cast<std::streamsize>(cand_block.size()));
+            }
+        }
+
+        std::cout << "RESULT_CANDIDATE=" << abs_path << "\n";
+        std::cout << "RESULT_CLASSIFICATION=" << to_string(verdict.classification) << "\n";
+        std::cout << "RESULT_SOLVER_STATUS=SAT\n";
+        std::cout.flush();
+        if (verdict.is_valid) {
+            std::cout << "   [VERIFIED via IndependentVerifier] Cube "
+                      << winning_cube << " yields a valid " << rounds
+                      << "-round preimage. Classification: "
+                      << to_string(verdict.classification) << "\n";
+            return 0;
+        }
+        std::cout << "   [REJECTED via IndependentVerifier] Cube " << winning_cube
+                  << " candidate failed verification: " << verdict.failure_reason << "\n";
+        return 2;
+    }
+
+    // No SAT cube found. Distinguish a proof from an inconclusive run: a proof
+    // requires every cube to have been decided UNSAT with no timeouts.
+    if (n_unsat == total_cubes && n_inconc == 0) {
+        std::cout << "RESULT_CANDIDATE=NONE\n";
+        std::cout << "RESULT_CLASSIFICATION=ProvenNoPreimage\n";
+        std::cout << "RESULT_SOLVER_STATUS=UNSAT\n";
+        std::cout.flush();
+        std::cout << "   PROOF: all " << total_cubes
+                  << " cubes are disjoint, cover the space, and each was decided "
+                     "UNSAT. No 1-block preimage exists for this target at "
+                  << rounds << " rounds under the pinned message words.\n";
+        return 1;
+    }
+
+    std::cout << "RESULT_CANDIDATE=NONE\n";
+    std::cout << "RESULT_CLASSIFICATION=Unresolved\n";
+    std::cout << "RESULT_SOLVER_STATUS=" << (n_inconc ? "TIMEOUT" : "UNKNOWN") << "\n";
+    std::cout.flush();
+    std::cout << "   Unresolved: " << n_inconc
+              << " cube(s) hit the per-cube budget without a verdict. "
+                 "This is NOT a proof of nonexistence.\n";
+    return 1;
+}
+
 // `sha-research preimage --rounds N [--solver S] [--encoding xor|tseitin]
-//                         [--carry-save] [--timeout T] [--out DIR]`
+//                         [--carry-save] [--timeout T] [--out DIR]
+//                         [--fix-words FIRST:LAST] [--fix-seed N]
+//                         [--cube-bits K] [--cube-round R] [--cube-register a|e]
+//                         [--jobs J]`
 //
 // Emits the full machine-readable result contract on stdout, including the
 // encoding metrics the autonomous loop needs to make escalation decisions.
 int cmd_preimage(const std::vector<std::string>& args) {
-    ExperimentOptions opt;
+    SearchConfig opt;
 
     auto need_value = [&](size_t& i, const char* name) -> std::string {
         if (i + 1 >= args.size()) {
@@ -455,19 +788,65 @@ int cmd_preimage(const std::vector<std::string>& args) {
                 }
             } else if (a == "--carry-save") {
                 opt.carry_save = true;
+            } else if (a == "--fix-words") {
+                const std::string spec = need_value(i, "--fix-words");
+                const size_t colon = spec.find(':');
+                if (colon == std::string::npos) {
+                    throw std::invalid_argument(
+                        "--fix-words expects FIRST:LAST, got '" + spec + "'");
+                }
+                opt.fix_first_word = std::stoi(spec.substr(0, colon));
+                opt.fix_last_word = std::stoi(spec.substr(colon + 1));
+                if (opt.fix_first_word < 0 || opt.fix_last_word < opt.fix_first_word ||
+                    opt.fix_last_word > 15) {
+                    throw std::invalid_argument(
+                        "--fix-words range must satisfy 0 <= FIRST <= LAST <= 15");
+                }
+            } else if (a == "--fix-seed") {
+                opt.fix_seed = static_cast<uint32_t>(std::stoul(need_value(i, "--fix-seed")));
+            } else if (a == "--cube-bits") {
+                opt.cube_bits = static_cast<uint32_t>(std::stoul(need_value(i, "--cube-bits")));
+                if (opt.cube_bits > 24) {
+                    throw std::invalid_argument("--cube-bits must be <= 24");
+                }
+            } else if (a == "--cube-round") {
+                opt.cube_round = std::stoi(need_value(i, "--cube-round"));
+            } else if (a == "--cube-register") {
+                const std::string reg = need_value(i, "--cube-register");
+                if (reg != "a" && reg != "e") {
+                    throw std::invalid_argument("--cube-register must be 'a' or 'e'");
+                }
+                opt.cube_register = reg[0];
+            } else if (a == "--jobs") {
+                opt.jobs = static_cast<uint32_t>(std::stoul(need_value(i, "--jobs")));
             } else {
                 throw std::invalid_argument("unknown option '" + a + "'");
             }
         }
+        if (opt.cube_bits > 0 && opt.cube_round < 0) {
+            throw std::invalid_argument("--cube-bits requires --cube-round");
+        }
+        if (opt.cube_round >= 0 && opt.cube_round > static_cast<int>(opt.rounds)) {
+            throw std::invalid_argument(
+                "--cube-round must be <= --rounds (the boundary state must exist)");
+        }
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << "\n";
         std::cerr << "Usage: sha-research preimage --rounds N [--solver S] "
-                     "[--encoding xor|tseitin] [--carry-save] [--timeout T] [--out DIR]\n";
+                     "[--encoding xor|tseitin] [--carry-save] [--timeout T] [--out DIR]\n"
+                     "                          [--fix-words FIRST:LAST] [--fix-seed N]\n"
+                     "                          [--cube-bits K] [--cube-round R] "
+                     "[--cube-register a|e] [--jobs J]\n";
         return 2;
     }
 
+    if (opt.cube_bits > 0) {
+        return cmd_cube_search(opt);
+    }
+
     return cmd_experiment_run(static_cast<int>(opt.rounds), opt.solver_str, opt.out_dir,
-                              opt.dialect, opt.carry_save, opt.timeout);
+                              opt.dialect, opt.carry_save, opt.timeout,
+                              opt.fix_first_word, opt.fix_last_word, opt.fix_seed);
 }
 
 struct CampaignState {

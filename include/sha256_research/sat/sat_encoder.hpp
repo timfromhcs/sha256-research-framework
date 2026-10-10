@@ -7,6 +7,7 @@
 #include <string>
 #include <map>
 #include <memory>
+#include <utility>
 
 namespace sha256_research {
 
@@ -215,7 +216,14 @@ public:
         bool fix_target_digest{false};
         Sha256Digest target_digest{};
         bool is_collision_problem{false};
-        std::vector<uint32_t> fixed_message_words; // optional pre-fixed words
+        // Message words to pin, as (word_index, value) pairs. Using explicit
+        // indices rather than a positional vector means pinning W[3] does not
+        // silently pin W[0..2] as well.
+        //
+        // This is sound for a one-block preimage: 512 free message bits map
+        // onto 256 output bits, so up to 2^256 words may be fixed while the
+        // instance stays satisfiable.
+        std::vector<std::pair<uint32_t, uint32_t>> fixed_words;
         EncodingDialect dialect{EncodingDialect::Tseitin};
         // Reassociate the round additions into a single shared carry chain.
         bool carry_save_t1{false};

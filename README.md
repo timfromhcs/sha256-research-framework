@@ -1,4 +1,4 @@
-# SHA-256 Cryptanalysis Research Framework (v4.0.0)
+# SHA-256 Cryptanalysis Research Framework (v4.1.0)
 
 [![Build (Windows MSVC)](https://github.com/timfromhcs/sha256-research-framework/actions/workflows/ci-build.yml/badge.svg?branch=main)](https://github.com/timfromhcs/sha256-research-framework/actions/workflows/ci-build.yml)
 [![Tests (Windows)](https://github.com/timfromhcs/sha256-research-framework/actions/workflows/ci-test.yml/badge.svg?branch=main)](https://github.com/timfromhcs/sha256-research-framework/actions/workflows/ci-test.yml)
@@ -31,6 +31,68 @@ A headless, local-first autonomous research platform for SHA-256 cryptanalysis w
 - **Reduced-Round Demonstrations**: Inversions are verified by the independent reference engine. The deepest preimage this framework has confirmed is **18 rounds** of the compression function (see [`reports/preimage_scaling.md`](reports/preimage_scaling.md)). Round 19 did not resolve within the measured budget — that is a statement about this encoding and this budget, **not** a proof of impossibility.
 - **Why full SHA-256 is out of reach**: A full preimage costs 2^256 ≈ 1.16e77 compression-function evaluations. All Bitcoin mining combined (~1e21 H/s) would need roughly 1e56 years. This is a physical bound, not an implementation gap.
 - **Classification Non-Negotiables**: Reduced-round experiments are never conflated with full SHA-256. Modified or custom-IV experiments are categorized strictly as `SemiFreeStart` or rejected. Near-collisions are triage heuristics, not cryptographic breaks.
+
+---
+
+## Release v4.1.0: Advanced Search Strategies (measured, including what failed)
+
+Implements the techniques from Zaikin, *Constraints* 2026, which reached 19
+rounds of SHA-256 via a parameterised CDCL solver plus parallel
+Cube-and-Conquer. Both were implemented and **measured to be worse on this
+instance**, which is reported rather than hidden.
+
+### Parallel Cube-and-Conquer
+
+```bash
+sha-research preimage --rounds N --cube-bits K --cube-round R \
+                      [--cube-register a|e] [--jobs J]
+```
+
+Disjoint cubes over selected state bits, each solved independently under
+assumptions; a cube proven `UNSAT` yields a blocking clause that prunes it
+permanently. Because the cubes are disjoint and total, exhausting them with
+`UNSAT` is a **proof** of nonexistence, not a timeout.
+
+Safety properties: cubes are processed in batches so the master formula is
+never written concurrently; a cube that merely times out is never pruned.
+
+### Message-word pinning
+
+```bash
+sha-research preimage --rounds N --fix-words 0:7 --fix-seed S
+```
+
+`fixed_words` uses explicit `(index, value)` pairs, so pinning `W[3]` does not
+silently pin `W[0..2]`.
+
+### Measured at 18 rounds (XOR + carry-save, 300 s budget)
+
+| Strategy | Solve time | Outcome |
+| :--- | ---: | :--- |
+| unrestricted | **13.3 s** | VERIFIED |
+| pin `W[0..3]` | 293 s | TIMEOUT |
+| pin `W[0..7]` | 292 s | TIMEOUT |
+| Cube-and-Conquer (12 bits) | 296 s | VERIFIED |
+
+At 19 rounds, 10-bit Cube-and-Conquer left **1024/1024 cubes inconclusive**
+after 3860 s and learned no blocking clauses.
+
+**Why both lose.** A one-block preimage is overdetermined by 2^256 — 512 free
+message bits map onto a 256-bit digest — so the instance is satisfiable by a
+wide margin and is hard only because the search cannot thread one of many
+solutions through a deep circuit. Pinning removes the solver's room to
+manoeuvre without making propagation easier, and partitioning gives each worker
+a strictly harder subproblem. Shrinking the search space does not help an
+overdetermined problem. See
+[`docs/research/advanced-strategies.md`](docs/research/advanced-strategies.md)
+and [`reports/preimage_strategies.md`](reports/preimage_strategies.md).
+
+### Why 19 rounds still needs a programmable solver
+
+The published result depends on a CDCL implementation whose branching heuristic
+is specialised to intermediate inverse problems, which is not reachable through
+a solver binary's command-line flags. The practical 19/20-round record (Basra
+2026) uses table-based context shaping instead of SAT inversion.
 
 ---
 

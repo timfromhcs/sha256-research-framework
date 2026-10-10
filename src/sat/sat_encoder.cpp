@@ -397,9 +397,10 @@ SatEncoder::Sha256SatEncoding SatEncoder::encode_reduced_rounds(const Sha256Prob
         enc.message_vars[t] = encode_add32(enc.cnf, sum1, sum2);
     }
 
-    // Optional: fix specific message words
-    for (size_t i = 0; i < config.fixed_message_words.size() && i < 16; ++i) {
-        fix_const32(enc.cnf, enc.message_vars[i], config.fixed_message_words[i]);
+    // Optional: pin specific message words by index.
+    for (const auto& [index, value] : config.fixed_words) {
+        if (index >= 16 || index >= enc.message_vars.size()) continue;
+        fix_const32(enc.cnf, enc.message_vars[index], value);
     }
 
     // 2. Initial state variables A_0..H_0
