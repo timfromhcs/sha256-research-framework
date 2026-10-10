@@ -12,12 +12,14 @@
       "cubes_solved": null,
       "cubes_total": null,
       "cubes_unsat": null,
-      "encode_seconds": 0.0047168,
+      "dobbertin_bits_used": null,
+      "dobbertin_round": null,
+      "encode_seconds": 0.0047298,
       "encoding": "xor",
       "exit_code": 0,
       "resolved": true,
       "rounds": 18,
-      "solve_seconds": 13.3207,
+      "solve_seconds": 13.2168,
       "solver": "cryptominisat",
       "solver_status": "SAT",
       "status": "VERIFIED",
@@ -25,7 +27,7 @@
       "strategy_label": "unrestricted",
       "target_digest": "8293732f64605a69f8dae1ec88b52c8645a70736118e36c620da3dc1539b19cf",
       "verified": true,
-      "wall_seconds": 21.3
+      "wall_seconds": 13.666
     },
     {
       "budget_seconds": 300,
@@ -39,12 +41,14 @@
       "cubes_solved": null,
       "cubes_total": null,
       "cubes_unsat": null,
-      "encode_seconds": 0.0048353,
+      "dobbertin_bits_used": null,
+      "dobbertin_round": null,
+      "encode_seconds": 0.0048525,
       "encoding": "xor",
       "exit_code": 1,
       "resolved": false,
       "rounds": 18,
-      "solve_seconds": 293.4,
+      "solve_seconds": 285.528,
       "solver": "cryptominisat",
       "solver_status": "TIMEOUT",
       "status": "TIMEOUT",
@@ -55,7 +59,7 @@
       "strategy_label": "pin W[0..3]",
       "target_digest": "8293732f64605a69f8dae1ec88b52c8645a70736118e36c620da3dc1539b19cf",
       "verified": false,
-      "wall_seconds": 294.394
+      "wall_seconds": 286.366
     },
     {
       "budget_seconds": 300,
@@ -69,12 +73,14 @@
       "cubes_solved": null,
       "cubes_total": null,
       "cubes_unsat": null,
-      "encode_seconds": 0.004469,
+      "dobbertin_bits_used": null,
+      "dobbertin_round": null,
+      "encode_seconds": 0.0046587,
       "encoding": "xor",
       "exit_code": 1,
       "resolved": false,
       "rounds": 18,
-      "solve_seconds": 291.708,
+      "solve_seconds": 285.222,
       "solver": "cryptominisat",
       "solver_status": "TIMEOUT",
       "status": "TIMEOUT",
@@ -85,7 +91,41 @@
       "strategy_label": "pin W[0..7]",
       "target_digest": "8293732f64605a69f8dae1ec88b52c8645a70736118e36c620da3dc1539b19cf",
       "verified": false,
-      "wall_seconds": 292.692
+      "wall_seconds": 286.081
+    },
+    {
+      "budget_seconds": 300,
+      "candidate_found": true,
+      "carry_save": true,
+      "classification": "ReducedRoundPreimage",
+      "cnf_clauses": 33125,
+      "cnf_vars": 16725,
+      "cnf_xors": 5742,
+      "cubes_inconclusive": null,
+      "cubes_solved": null,
+      "cubes_total": null,
+      "cubes_unsat": null,
+      "dobbertin_bits_used": 24,
+      "dobbertin_round": 12,
+      "encode_seconds": 0.0052437,
+      "encoding": "xor",
+      "exit_code": 0,
+      "resolved": true,
+      "rounds": 18,
+      "solve_seconds": 115.652,
+      "solver": "cryptominisat",
+      "solver_status": "SAT",
+      "status": "VERIFIED",
+      "strategy": {
+        "dobbertin_bits": 24,
+        "dobbertin_constant": 0,
+        "dobbertin_register": "e",
+        "dobbertin_round": 12
+      },
+      "strategy_label": "Dobbertin E@12, 24 bits",
+      "target_digest": "8293732f64605a69f8dae1ec88b52c8645a70736118e36c620da3dc1539b19cf",
+      "verified": true,
+      "wall_seconds": 115.788
     },
     {
       "budget_seconds": 300,
@@ -99,12 +139,14 @@
       "cubes_solved": 16,
       "cubes_total": 4096,
       "cubes_unsat": 0,
-      "encode_seconds": 0.0061768,
+      "dobbertin_bits_used": null,
+      "dobbertin_round": null,
+      "encode_seconds": 0.0051833,
       "encoding": "xor",
       "exit_code": 0,
       "resolved": true,
       "rounds": 18,
-      "solve_seconds": 295.566,
+      "solve_seconds": 287.022,
       "solver": "cryptominisat",
       "solver_status": "SAT",
       "status": "VERIFIED",
@@ -116,7 +158,7 @@
       "strategy_label": "cube-and-conquer (12 bits)",
       "target_digest": "8293732f64605a69f8dae1ec88b52c8645a70736118e36c620da3dc1539b19cf",
       "verified": true,
-      "wall_seconds": 295.755
+      "wall_seconds": 287.157
     }
   ],
   "meta": {
@@ -132,7 +174,7 @@
       "total_ram_bytes": 21245952000
     },
     "max_rounds": 18,
-    "measured_at": "2026-10-10T19:36:25+00:00",
+    "measured_at": "2026-10-10T21:50:08+00:00",
     "solver": "cryptominisat",
     "strategy_sweep": true
   }

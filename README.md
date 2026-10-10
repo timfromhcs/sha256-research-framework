@@ -1,4 +1,4 @@
-# SHA-256 Cryptanalysis Research Framework (v4.1.0)
+# SHA-256 Cryptanalysis Research Framework (v4.2.0)
 
 [![Build (Windows MSVC)](https://github.com/timfromhcs/sha256-research-framework/actions/workflows/ci-build.yml/badge.svg?branch=main)](https://github.com/timfromhcs/sha256-research-framework/actions/workflows/ci-build.yml)
 [![Tests (Windows)](https://github.com/timfromhcs/sha256-research-framework/actions/workflows/ci-test.yml/badge.svg?branch=main)](https://github.com/timfromhcs/sha256-research-framework/actions/workflows/ci-test.yml)
@@ -31,6 +31,53 @@ A headless, local-first autonomous research platform for SHA-256 cryptanalysis w
 - **Reduced-Round Demonstrations**: Inversions are verified by the independent reference engine. The deepest preimage this framework has confirmed is **18 rounds** of the compression function (see [`reports/preimage_scaling.md`](reports/preimage_scaling.md)). Round 19 did not resolve within the measured budget — that is a statement about this encoding and this budget, **not** a proof of impossibility.
 - **Why full SHA-256 is out of reach**: A full preimage costs 2^256 ≈ 1.16e77 compression-function evaluations. All Bitcoin mining combined (~1e21 H/s) would need roughly 1e56 years. This is a physical bound, not an implementation gap.
 - **Classification Non-Negotiables**: Reduced-round experiments are never conflated with full SHA-256. Modified or custom-IV experiments are categorized strictly as `SemiFreeStart` or rejected. Near-collisions are triage heuristics, not cryptographic breaks.
+
+---
+
+## Release v4.2.0: Dobbertin State Constraints
+
+Implements Dobbertin's state-register constraints (Dobbertin 1998; applied to
+SHA-2 by Davydov, Pikhtovnikov, Kiryanova and Zaikin 2025, who reported 17-
+and 18-round preimages "for the first time") — the technique behind the
+published 19-round result.
+
+```bash
+sha-research preimage --rounds N --dobbertin-bits B --dobbertin-round R \
+                      [--dobbertin-register a|e] [--dobbertin-constant K]
+```
+
+Forces the top `B` bits of a state register at a round boundary to match a
+constant, then relaxes `B` one bit at a time on failure. Relaxation is sound in
+both directions, so any preimage found at a lower level is still genuine. Only
+the unconstrained `B = 0` instance being `UNSAT` is reported as
+`ProvenNoPreimage`.
+
+### Measured at 18 rounds (XOR + carry-save, 300 s budget)
+
+| Strategy | Solve time | Outcome |
+| :--- | ---: | :--- |
+| **unrestricted** | **13.2 s** | VERIFIED |
+| Dobbertin E@12, 24 bits, K=0 | 115.7 s | VERIFIED |
+| pin `W[0..3]` | 285.5 s | TIMEOUT |
+| pin `W[0..7]` | 285.2 s | TIMEOUT |
+| Cube-and-Conquer (12 bits) | 287.0 s | VERIFIED |
+
+E@12 was `SAT` directly at 24 bits with no relaxation, and the candidate passed
+independent verification — a real structural finding. It is nevertheless ~9x
+slower than the plain search.
+
+Solver tuning was also investigated: CryptoMiniSat's `--maxmatrixrows` default
+sits below the 6189 XOR constraints at 19 rounds, which looked like it might
+disable Gaussian elimination. Verbose output shows it running normally, and a
+six-configuration flag sweep produced no verdict. A solver comparison confirms
+the default is right — CryptoMiniSat/XOR solves 18 rounds in 13.2 s against
+Kissat/Tseitin at 47.6 s.
+
+**Four strategies implemented, four measured regressions.** They are documented
+rather than dropped, because a measured regression is a result. The one lever
+that demonstrably worked remains encoding quality, which took this framework
+from 10 rounds to 18. See
+[`docs/research/advanced-strategies.md`](docs/research/advanced-strategies.md).
 
 ---
 

@@ -483,6 +483,37 @@ SatEncoder::Sha256SatEncoding SatEncoder::encode_reduced_rounds(const Sha256Prob
         }
     }
 
+    // 6. Dobbertin-style state constraint.
+    //
+    // Forces the top `state_constraint_bits` bits of one state register at a
+    // round boundary to match those of `state_constraint_value`. Constraining
+    // the middle of the circuit is what makes the problem tractable: the
+    // constraint propagates both forward and backward.
+    if (config.use_state_constraint && config.state_constraint_bits > 0) {
+        const std::vector<std::vector<int>>& reg =
+            (config.state_constraint_register == 0) ? enc.state_a_vars
+                                                    : enc.state_e_vars;
+        const size_t r = config.state_constraint_round;
+        if (r >= reg.size()) {
+            throw std::invalid_argument(
+                "state_constraint_round out of range: no state recorded at round " +
+                std::to_string(config.state_constraint_round));
+        }
+        if (config.state_constraint_bits > 32) {
+            throw std::invalid_argument("state_constraint_bits must be <= 32");
+        }
+
+        // Bit i of the word corresponds to literal index i in the variable
+        // vector (little-endian within the word, matching store_be32).
+        const uint32_t bits = config.state_constraint_bits;
+        for (uint32_t i = 0; i < bits; ++i) {
+            const uint32_t word_bit = 31u - i;  // most-significant bits first
+            const bool want = ((config.state_constraint_value >> word_bit) & 1U) != 0;
+            const int var = reg[r][word_bit];
+            enc.cnf.add_unit(want ? var : -var);
+        }
+    }
+
     return enc;
 }
 

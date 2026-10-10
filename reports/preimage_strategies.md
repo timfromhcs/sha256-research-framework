@@ -30,10 +30,11 @@ extrapolated.
 
 | Rounds | CNF vars | CNF clauses | XOR constraints | Encode (s) | Solve (s) | Outcome |
 |------:|---------:|------------:|----------------:|-----------:|----------:|---------|
-| 18 | 16725 | 33101 | 5742 | 0.0047 | 13.32 | VERIFIED |
-| 18 | 16725 | 33229 | 5742 | 0.0048 | 293.40 | TIMEOUT |
-| 18 | 16725 | 33357 | 5742 | 0.0045 | 291.71 | TIMEOUT |
-| 18 | 16725 | 33101 | 5742 | 0.0062 | 295.57 | VERIFIED |
+| 18 | 16725 | 33101 | 5742 | 0.0047 | 13.22 | VERIFIED |
+| 18 | 16725 | 33229 | 5742 | 0.0049 | 285.53 | TIMEOUT |
+| 18 | 16725 | 33357 | 5742 | 0.0047 | 285.22 | TIMEOUT |
+| 18 | 16725 | 33125 | 5742 | 0.0052 | 115.65 | VERIFIED |
+| 18 | 16725 | 33101 | 5742 | 0.0052 | 287.02 | VERIFIED |
 
 ## Findings
 
@@ -50,17 +51,19 @@ extrapolated.
 All rows target the same round count and encoding; only the search
 strategy differs. Negative results are included deliberately.
 
-| Strategy | CNF vars | Solve (s) | Cubes solved | Outcome |
-|:---------|---------:|----------:|-------------:|:--------|
-| unrestricted | 16725 | 13.32 | - | VERIFIED |
-| pin W[0..3] | 16725 | 293.40 | - | TIMEOUT |
-| pin W[0..7] | 16725 | 291.71 | - | TIMEOUT |
-| cube-and-conquer (12 bits) | 16725 | 295.57 | 16/4096 | VERIFIED |
+| Strategy | CNF vars | Solve (s) | Found at | Outcome |
+|:---------|---------:|----------:|----------:|:--------|
+| unrestricted | 16725 | 13.22 | - | VERIFIED |
+| pin W[0..3] | 16725 | 285.53 | - | TIMEOUT |
+| pin W[0..7] | 16725 | 285.22 | - | TIMEOUT |
+| Dobbertin E@12, 24 bits | 16725 | 115.65 | - | VERIFIED |
+| cube-and-conquer (12 bits) | 16725 | 287.02 | cube 16/4096 | VERIFIED |
 
-Message-word pinning and Cube-and-Conquer both made the instance
-*harder* here. A one-block preimage is overdetermined by 2^256, so
-removing free variables removes the solver's room to manoeuvre
-without making propagation easier. See
+Message-word pinning, Dobbertin state constraints and
+Cube-and-Conquer all made the instance *harder* here. A one-block
+preimage is overdetermined by 2^256, so removing free variables
+removes the solver's room to manoeuvre without making propagation
+easier. See
 [`docs/research/advanced-strategies.md`](../docs/research/advanced-strategies.md).
 
 ## Encoding comparison
@@ -75,5 +78,5 @@ and varies only the search strategy. Encoding figures are in
 python tools/measure_scaling.py --strategy-sweep --max-rounds 18 --timeout 300
 ```
 
-Measured at 2026-10-10T19:36:25+00:00.
+Measured at 2026-10-10T21:50:08+00:00.
 

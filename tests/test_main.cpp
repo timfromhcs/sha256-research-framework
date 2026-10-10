@@ -1461,6 +1461,98 @@ void test_pinning_all_words_proves_unsat() {
     }
 }
 
+// Dobbertin-style state constraints must pin the top `bits` bits of the chosen
+// register at the chosen round, and must leave the rest free.
+void test_dobbertin_state_constraint_pins_msb_first() {
+    auto solver = pick_solver(EncodingDialect::Xor);
+    if (!solver) { std::cout << "[no XOR solver, skipping] "; return; }
+
+    const uint32_t rounds = 3;
+    const uint32_t k_round = 1;
+    const uint32_t k_value = 0xA5A5A5A5u;
+    const uint32_t bits = 8;
+
+    SatEncoder::Sha256ProblemConfig cfg;
+    cfg.num_rounds = rounds;
+    cfg.use_standard_iv = true;
+    cfg.dialect = EncodingDialect::Xor;
+    cfg.use_state_constraint = true;
+    cfg.state_constraint_round = k_round;
+    cfg.state_constraint_register = 1;   // E
+    cfg.state_constraint_value = k_value;
+    cfg.state_constraint_bits = bits;
+    auto enc = SatEncoder::encode_reduced_rounds(cfg);
+
+    // Complementing a constrained bit must be UNSAT; flipping an unconstrained
+    // bit must stay SAT.
+    for (uint32_t i = 0; i < bits; ++i) {
+        const uint32_t word_bit = 31u - i;  // most-significant first
+        const bool want = ((k_value >> word_bit) & 1U) != 0;
+        CnfFormula c = enc.cnf;
+        c.add_unit(want ? -enc.state_e_vars[k_round][word_bit]
+                        : enc.state_e_vars[k_round][word_bit]);
+        SolverStatus st = solver->solve_cnf(c, 60).status;
+        if (st == SolverStatus::Satisfiable) {
+            throw std::runtime_error(
+                "state constraint bit is not actually pinned (complement SAT)");
+        }
+    }
+
+    // A bit below the constrained prefix must remain free.
+    for (uint32_t word_bit = 0; word_bit + bits < 32; ++word_bit) {
+        CnfFormula c = enc.cnf;
+        c.add_unit(enc.state_e_vars[k_round][word_bit]);
+        SolverStatus st = solver->solve_cnf(c, 60).status;
+        if (st != SolverStatus::Satisfiable) {
+            throw std::runtime_error(
+                "state constraint over-constrained an unconstrained bit");
+        }
+    }
+
+    // Zero bits must be equivalent to no constraint at all.
+    SatEncoder::Sha256ProblemConfig none = cfg;
+    none.state_constraint_bits = 0;
+    auto enc_none = SatEncoder::encode_reduced_rounds(none);
+    SatEncoder::Sha256ProblemConfig zero = cfg;
+    zero.state_constraint_bits = 0;
+    auto enc_zero = SatEncoder::encode_reduced_rounds(zero);
+    if (enc_none.cnf.num_vars != enc_zero.cnf.num_vars ||
+        enc_none.cnf.clauses.size() != enc_zero.cnf.clauses.size()) {
+        throw std::runtime_error("0-bit state constraint is not a no-op");
+    }
+}
+
+// A round index with no recorded state must be rejected, not silently ignored.
+void test_dobbertin_rejects_out_of_range_round() {
+    SatEncoder::Sha256ProblemConfig cfg;
+    cfg.num_rounds = 2;
+    cfg.use_state_constraint = true;
+    cfg.state_constraint_round = 9;   // only rounds 0..2 exist
+    cfg.state_constraint_bits = 8;
+    bool threw = false;
+    try {
+        SatEncoder::encode_reduced_rounds(cfg);
+    } catch (const std::invalid_argument&) {
+        threw = true;
+    }
+    if (!threw) {
+        throw std::runtime_error("out-of-range state_constraint_round was accepted");
+    }
+
+    SatEncoder::Sha256ProblemConfig cfg2 = cfg;
+    cfg2.state_constraint_round = 0;
+    cfg2.state_constraint_bits = 33;   // more than a word
+    threw = false;
+    try {
+        SatEncoder::encode_reduced_rounds(cfg2);
+    } catch (const std::invalid_argument&) {
+        threw = true;
+    }
+    if (!threw) {
+        throw std::runtime_error("state_constraint_bits > 32 was accepted");
+    }
+}
+
 int main() {
     std::cout << "===============================================================\n"
               << "            SHA-256 Framework Test Suite                       \n"
@@ -1489,7 +1581,9 @@ int main() {
     RUN_TEST(test_cube_enumeration_respects_cap);
     RUN_TEST(test_solve_under_assumptions_pins_literals);
     RUN_TEST(test_fixed_words_pins_only_listed_indices);
-    RUN_TEST(test_pinning_all_words_proves_unsat);
+RUN_TEST(test_pinning_all_words_proves_unsat);
+    RUN_TEST(test_dobbertin_state_constraint_pins_msb_first);
+    RUN_TEST(test_dobbertin_rejects_out_of_range_round);
     RUN_TEST(test_sat_invalid_round_rejection);
     RUN_TEST(test_anti_clamping_api);
     RUN_TEST(test_sat_end_to_end_with_solver);

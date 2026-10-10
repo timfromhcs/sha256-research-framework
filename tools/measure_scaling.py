@@ -87,6 +87,12 @@ def run_one(exe: Path, rounds: int, solver: str, encoding: str,
             cmd += ["--cube-register", strategy["cube_register"]]
         if strategy.get("jobs"):
             cmd += ["--jobs", str(strategy["jobs"])]
+    dob_bits = strategy.get("dobbertin_bits")
+    if dob_bits:
+        cmd += ["--dobbertin-bits", str(dob_bits),
+                "--dobbertin-round", str(strategy["dobbertin_round"]),
+                "--dobbertin-register", strategy.get("dobbertin_register", "e"),
+                "--dobbertin-constant", str(strategy.get("dobbertin_constant", 0))]
 
     t0 = time.perf_counter()
     try:
@@ -158,6 +164,8 @@ def run_one(exe: Path, rounds: int, solver: str, encoding: str,
         "cubes_solved": as_int("RESULT_CUBES_SOLVED"),
         "cubes_unsat": as_int("RESULT_CUBES_UNSAT"),
         "cubes_inconclusive": as_int("RESULT_CUBES_INCONCLUSIVE"),
+        "dobbertin_bits_used": as_int("RESULT_DOBBERTIN_BITS"),
+        "dobbertin_round": as_int("RESULT_DOBBERTIN_ROUND"),
         "classification": res.get("RESULT_CLASSIFICATION"),
         "target_digest": res.get("RESULT_TARGET_DIGEST"),
         "verified": resolved,
@@ -330,19 +338,24 @@ def render_report(measurements: list, meta: dict) -> str:
         A("All rows target the same round count and encoding; only the search")
         A("strategy differs. Negative results are included deliberately.")
         A("")
-        A("| Strategy | CNF vars | Solve (s) | Cubes solved | Outcome |")
-        A("|:---------|---------:|----------:|-------------:|:--------|")
+        A("| Strategy | CNF vars | Solve (s) | Found at | Outcome |")
+        A("|:---------|---------:|----------:|----------:|:--------|")
         for m in measurements:
             label = m.get("strategy_label") or describe_strategy(m.get("strategy", {}))
-            cubes = f"{m.get('cubes_solved')}/{m.get('cubes_total')}" \
-                if m.get("cubes_total") else "-"
+            if m.get("cubes_total"):
+                found = f"cube {m.get('cubes_solved')}/{m.get('cubes_total')}"
+            elif m.get("dobbertin_bits") is not None:
+                found = f"{m.get('dobbertin_bits_used')}/{m['dobbertin_bits']} bits"
+            else:
+                found = "-"
             A(f"| {label} | {m.get('cnf_vars', '-')} "
-              f"| {m.get('solve_seconds', 0):.2f} | {cubes} | {m['status']} |")
+              f"| {m.get('solve_seconds', 0):.2f} | {found} | {m['status']} |")
         A("")
-        A("Message-word pinning and Cube-and-Conquer both made the instance")
-        A("*harder* here. A one-block preimage is overdetermined by 2^256, so")
-        A("removing free variables removes the solver's room to manoeuvre")
-        A("without making propagation easier. See")
+        A("Message-word pinning, Dobbertin state constraints and")
+        A("Cube-and-Conquer all made the instance *harder* here. A one-block")
+        A("preimage is overdetermined by 2^256, so removing free variables")
+        A("removes the solver's room to manoeuvre without making propagation")
+        A("easier. See")
         A("[`docs/research/advanced-strategies.md`]"
           "(../docs/research/advanced-strategies.md).")
     else:
@@ -442,14 +455,17 @@ CONFIGS = [
 def strategy_variants() -> list:
     """Strategies compared by --strategy-sweep.
 
-    All three target the same round count and encoding, so the only variable
-    is the search strategy. Negative results are kept: a strategy that makes
-    the instance harder is a finding, not a failure.
+    All target the same round count and encoding, so the only variable is the
+    search strategy. Negative results are kept: a strategy that makes the
+    instance harder is a finding, not a failure.
     """
     return [
         ("unrestricted", {}),
         ("pin W[0..3]", {"fix_words": "0:3", "fix_seed": 0x5EED1234}),
         ("pin W[0..7]", {"fix_words": "0:7", "fix_seed": 0x5EED1234}),
+        ("Dobbertin E@12, 24 bits",
+         {"dobbertin_bits": 24, "dobbertin_round": 12,
+          "dobbertin_register": "e", "dobbertin_constant": 0}),
         ("cube-and-conquer (12 bits)",
          {"cube_bits": 12, "cube_round": 6, "cube_register": "e"}),
     ]
@@ -462,6 +478,9 @@ def describe_strategy(strategy: dict) -> str:
     bits = []
     if strategy.get("fix_words"):
         bits.append(f"pin {strategy['fix_words']}")
+    if strategy.get("dobbertin_bits"):
+        bits.append(f"Dobbertin {strategy.get('dobbertin_register', 'e')}"
+                    f"@{strategy['dobbertin_round']}")
     if strategy.get("cube_bits"):
         bits.append(f"{strategy['cube_bits']}-bit C&C")
     return " + ".join(bits) if bits else "unrestricted"

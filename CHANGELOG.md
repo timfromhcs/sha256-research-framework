@@ -2,6 +2,80 @@
 
 All notable changes to the SHA-256 Research Framework will be documented in this file.
 
+## [4.2.0] - 2026-10-10
+
+Implements **Dobbertin's state-register constraints** (Dobbertin 1998; applied
+to SHA-2 by Davydov, Pikhtovnikov, Kiryanova and Zaikin 2025, who reported 17-
+and 18-round preimages "for the first time") — the technique behind the
+published 19-round result — and records its measured behaviour here.
+
+### Added
+
+- **Dobbertin-style state constraints.** Forces the top `B` bits of one state
+  register at a round boundary to match a chosen constant `K`, then relaxes `B`
+  one bit at a time on failure, following Algorithm 1 of Zaikin (IJCAI-ECAI
+  2022).
+  - Relaxation is sound in both directions: fewer constraint bits is a strict
+    superset of the solution set, so a preimage found at a lower level is still
+    genuine. Inconclusive levels relax rather than abort.
+  - Only the unconstrained `B = 0` instance being `UNSAT` is reported as
+    `ProvenNoPreimage`; every other outcome is `Unresolved`.
+  - CLI: `--dobbertin-bits B --dobbertin-round R --dobbertin-register a|e
+    --dobbertin-constant K`.
+  - Encoder support pins the most-significant bits first and rejects
+    out-of-range rounds and bit counts above 32.
+- **2 new C++ tests** (38 total): the constraint pins exactly the requested
+  bits (complement is UNSAT, lower bits stay free, 0 bits is a no-op), and
+  invalid round / bit counts are rejected.
+
+### Measured at 18 rounds (XOR + carry-save, 300 s budget)
+
+| Strategy | Solve time | Outcome |
+| :--- | ---: | :--- |
+| **unrestricted** | **13.2 s** | VERIFIED |
+| Dobbertin E@12, 24 bits, K=0 | 115.7 s | VERIFIED |
+| pin `W[0..3]` | 285.5 s | TIMEOUT |
+| pin `W[0..7]` | 285.2 s | TIMEOUT |
+| Cube-and-Conquer, 12 bits | 287.0 s | VERIFIED |
+
+Position sweep for the Dobbertin constraint at 18 rounds: E@8 and E@4 both
+relax all the way to 0 bits (no constraint helped), A@8 found at 10 bits, and
+**E@12 found at 24 bits with no relaxation at all**.
+
+That is a real structural finding — constraining 24 bits of a middle-round
+register still admits preimages — but it is ~9x slower than the plain search.
+
+At 19 rounds nothing resolved: the unrestricted instance exceeds 3230 s, all
+1024 Cube-and-Conquer cubes time out, and all 25 Dobbertin relaxation levels
+time out.
+
+### Solver tuning investigated and reported
+
+CryptoMiniSat's `--maxmatrixrows` default (5000) sits below the 6189 XOR
+constraints at 19 rounds, which looked like it might silently disable Gaussian
+elimination. Verbose output shows it running normally, building 4892x10010 and
+2249x4816 matrices with average XOR length 3.7–3.9. A six-configuration flag
+sweep (`--maxmatrixrows 20000`, `--autodisablegauss 0`, `--maxxorsize 12
+--varsperxorcut 1`, `--forcepreservexors 1`, `-m 1`) produced no verdict at 19
+rounds.
+
+A solver comparison confirms the existing default is the right choice:
+CryptoMiniSat with the XOR dialect solves 18 rounds in 13.2 s, whereas Kissat
+with the Tseitin dialect takes 47.6 s on the same instance.
+
+### Honest summary
+
+Four strategies were implemented — Dobbertin constraints, Cube-and-Conquer,
+message-word pinning, and solver tuning. **All four are slower than the plain
+search on this instance.** They are documented as measured regressions rather
+than dropped, because a measured regression is a result.
+
+The single lever that demonstrably worked remains **encoding quality**: the
+XOR dialect and carry-save adder took this framework from 10 rounds to 18.
+
+The deepest verified preimage remains **18 rounds**. No full SHA-256 preimage
+or collision is claimed.
+
 ## [4.1.0] - 2026-10-10
 
 Implements the search techniques published in Zaikin, *Constraints* 2026

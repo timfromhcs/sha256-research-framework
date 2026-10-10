@@ -224,6 +224,29 @@ public:
         // onto 256 output bits, so up to 2^256 words may be fixed while the
         // instance stays satisfiable.
         std::vector<std::pair<uint32_t, uint32_t>> fixed_words;
+
+        // Dobbertin-style state constraint (Dobbertin 1998; applied to SHA-2 by
+        // Davydov, Pikhtovnikov, Kiryanova and Zaikin 2025).
+        //
+        // Rather than constraining the *input*, force a whole state register at
+        // a round boundary to a chosen 32-bit constant K. This is a far
+        // stronger lever than pinning message words: it makes the constraint
+        // propagate in both directions from the middle of the circuit, which is
+        // exactly where a CDCL search struggles.
+        //
+        // Because the constrained state may admit no preimage at all for a
+        // given K, the constraint is applied *partially*: the top
+        // `state_constraint_bits` bits of the register must equal those of
+        // `state_constraint_value`. Calling code relaxes that count step by
+        // step. At `state_constraint_bits == 0` the constraint is absent and the
+        // instance is the plain preimage problem.
+        bool use_state_constraint{false};
+        uint32_t state_constraint_round{0};
+        // 0 = register A, 1 = register E. Only these two are tracked per round
+        // because they are the ones the round function actually rewrites.
+        uint32_t state_constraint_register{1};
+        uint32_t state_constraint_value{0};
+        uint32_t state_constraint_bits{0};
         EncodingDialect dialect{EncodingDialect::Tseitin};
         // Reassociate the round additions into a single shared carry chain.
         bool carry_save_t1{false};
