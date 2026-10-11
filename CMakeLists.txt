@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(sha256_research VERSION 4.2.0 LANGUAGES C CXX)
+project(sha256_research VERSION 4.3.0 LANGUAGES C CXX)
 
 enable_testing()
 

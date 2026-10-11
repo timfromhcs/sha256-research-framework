@@ -1,4 +1,4 @@
-# Advanced Search Strategies (v4.2.0)
+# Advanced Search Strategies (v4.3.0)
 
 This document records the search techniques implemented beyond the direct SAT
 encoding, and â€” more importantly â€” **what they actually measured**. Four were
@@ -223,3 +223,121 @@ sha-research preimage --rounds 19 --solver cryptominisat --encoding xor \
 sha-research preimage --rounds 18 --solver cryptominisat --encoding xor \
     --carry-save --fix-words 0:3 --timeout 300
 ```
+
+---
+
+## v4.3.0: External witnesses and a second solver core
+
+Two additions, both aimed at the same question: *how much can be trusted, and
+by what?*
+
+### External witness verification
+
+`tools/verify_published.py` confirms eight published reduced-round preimages
+using the segregated `IndependentVerifier`.
+
+| Witness | Rounds | Target | Positive | Negative control |
+| :--- | ---: | :--- | :--- | :--- |
+| P1 | 19 | Basra | verified, Hamming 0 | rejected @18 |
+| P2 | 19 | Basra | verified, Hamming 0 | rejected @18 |
+| P3 | 19 | Basra | verified, Hamming 0 | rejected @18 |
+| P4 | 19 | Basra | verified, Hamming 0 | rejected @18 |
+| P5 | 19 | Basra | verified, Hamming 0 | rejected @18 |
+| P6 | 19 | Basra | verified, Hamming 0 | rejected @18 |
+| P7 | 19 | all-ones (Zaikin) | verified, Hamming 0 | rejected @18 |
+| R20 | 20 | all-ones | verified, Hamming 0 | rejected @19 |
+
+**8/8 verified. Deepest externally published preimage confirmed: 20 rounds.**
+
+The negative controls are what make this meaningful. Each witness is also run
+at a neighbouring round count and *must* be rejected; a verifier that returned
+`true` unconditionally would pass the positive cases and fail the controls.
+
+Note on semantics: for rounds < 64 the verifier requires an exact 64-byte block
+and calls `independent_compress_block` directly, **without** SHA-256 padding.
+Padding applies only on the full 64-round path. Modelling a padded block would
+target a different problem from the one the witnesses describe.
+
+### Z3 bit-vector as a second solver core
+
+`tools/z3_bitvector_check.py` runs the same problem through Z3's bit-vector
+engine: a different search heuristic, different simplification pipeline, and no
+shared code with the CDCL path.
+
+| Rounds | Z3 bit-vector | Native CDCL path |
+| ---: | ---: | ---: |
+| 4 | 0.0 s | 0.0 s |
+| 5 | 0.0 s | 0.0 s |
+| 6 | 0.1 s | 0.0 s |
+| 7 | **27.2 s** | 0.0 s |
+| 8 | UNKNOWN @ 240 s | 0.0 s |
+| 18 | not attempted | **~13.2 s** |
+
+Z3's ceiling is **7 rounds** against our **18** — an 11-round gap.
+
+This is not a defect in either engine. SHA-256 is XOR-dominated: emitting the
+`Ch`, `Maj`, and `Sigma` relations as native XOR clauses lets the solver apply
+Gaussian elimination across hundreds of variables at once. Z3 bit-blasts
+eagerly into plain CNF and loses that structure entirely. The measurement is
+independent support for the XOR-dialect decision made back in v4.0.
+
+Z3 is retained as a **cross-check, not a path forward**.
+
+#### Four gates
+
+No Z3 result is reported unless all four agree:
+
+1. **Z3** returns a model.
+2. An **independent Python** recomputation reproduces the target.
+3. The **segregated C++ verifier** confirms it (`is_valid=True`).
+4. A **negative control** at `rounds - 1` is rejected.
+
+Disagreement is surfaced as an error, not smoothed over.
+
+#### What the gates caught
+
+Gate 2 earned its place immediately. Z3 returned models that satisfied its own
+constraints but whose digest did not reproduce — `K[2]` had been written as
+`0xb5c0fbbc` instead of `0xb5c0fbcf`. One transposed digit, invisible on
+inspection, wrong in every single run. The C++ verifier was right; the new
+Python reference was wrong.
+
+A bug found only by cross-checking two independent implementations is the
+entire argument for having them, and it is now pinned by
+`tests/test_python_reference_kat.py`.
+
+### Conditional-affine redundancy: not needed here
+
+Feng and Gao (ePrint 2026/1505) argue that Tseitin encodings of SHA-256's
+nonlinear functions can hide conditioned differential projections from BCP,
+and propose redundant CNF clauses to expose them — four for `Ch` and twelve for
+`Maj` per bit.
+
+The new C++ test `test_nonlinear_encodings_are_conditioned_projection_complete`
+checks our encodings against that criterion directly. It enumerates every
+assignment consistent with the `Ch` and `Maj` truth tables and asserts that each
+conditioned projection holds on all of them:
+
+- `Ch(e,f,g)`: four projections under `e = 1 -> out = f` and `e = 0 -> out = g`.
+- `Maj(a,b,c)`: six projections for each of the three control variables, under
+  `x = 1 -> out = OR(rest)` and `x = 0 -> out = AND(rest)`.
+
+**All are already entailed by the clauses we emit.** The redundant clauses
+therefore cannot add propagation, which is consistent with the measured
+slowdown from adding them. The paper's motivation is sound for encodings that
+fail this bar; ours does not fail it, so the remedy buys nothing here and costs
+clause count.
+
+This is a case where a negative result is the useful output: the technique can
+now be ruled out on grounds other than "we tried it and it was slower".
+
+## Still open
+
+- **19-round preimages remain unsolved** by this framework. Published 19- and
+  20-round results rely on table-based context shaping and heavily
+  parameterised search rather than a direct SAT encoding.
+- Reproducing the published results independently still requires a
+  programmable, structurally parameterised CDCL search, or a table-based
+  method such as context shaping.
+- Full SHA-256 preimage resistance stands at 2^256. Nothing in this document
+  changes that.

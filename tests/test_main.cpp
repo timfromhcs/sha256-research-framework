@@ -1553,6 +1553,91 @@ void test_dobbertin_rejects_out_of_range_round() {
     }
 }
 
+// Completeness of the Ch and Maj encodings with respect to conditioned
+// projections.
+//
+// Feng and Gao (ePrint 2026/1505) argue that Tseitin encodings of SHA-256's
+// nonlinear functions can hide conditioned differential projections from BCP,
+// and remedy this with redundant CNF clauses (four Ch and twelve Maj per bit).
+//
+// This test checks our encodings against that criterion directly. The gate is
+// complete for a given projection when every assignment consistent with the
+// truth table also satisfies the projected clause -- i.e. the projection is
+// already entailed by what we emit, so a redundant clause would add clause
+// count without adding propagation.
+//
+//   Ch(e,f,g) is controlled by e:     e = 1 -> out = f,      e = 0 -> out = g
+//   Maj(a,b,c) is controlled by any x: x = 1 -> out = OR(rest)
+//                                     x = 0 -> out = AND(rest)
+static bool clause_holds_under(const std::vector<int>& clause,
+                               const std::map<int, bool>& asg)
+{
+    for (int lit : clause) {
+        auto it = asg.find(lit > 0 ? lit : -lit);
+        if (it != asg.end() && it->second == (lit > 0)) return true;
+    }
+    return false;
+}
+
+// Assert that `clause` holds on every correct model of Ch/Maj over v.
+static void require_entailed(bool is_ch, const std::vector<int>& clause,
+                             const std::vector<int>& v, const char* what)
+{
+    for (int mask = 0; mask < 16; ++mask) {
+        std::map<int, bool> asg;
+        for (int i = 0; i < 4; ++i) asg[v[i]] = ((mask >> i) & 1) != 0;
+        const int a = asg[v[0]], b = asg[v[1]], c = asg[v[2]];
+        const bool truth = is_ch
+            ? ((((a & b) ^ ((1 - a) & c)) & 1) != 0)
+            : ((((a + b + c) >= 2) ? 1 : 0) != 0);
+        const bool out_value = asg[v[3]];
+        if (truth != out_value) continue;             // not a correct model
+        if (!clause_holds_under(clause, asg)) {
+            throw std::runtime_error(
+                std::string(is_ch ? "Ch" : "Maj") +
+                " encoding does not entail conditioned projection: " + what);
+        }
+    }
+}
+
+void test_nonlinear_encodings_are_conditioned_projection_complete() {
+    // ---- Ch: single control e, outputs f when e=1 and g when e=0.
+    {
+        CnfFormula enc;
+        const int e = enc.new_var(), f = enc.new_var(),
+                  g = enc.new_var(), o = enc.new_var();
+        SatEncoder::encode_ch(enc, e, f, g, o);
+        const std::vector<int> v = {e, f, g, o};
+
+        require_entailed(true, {-e, -o, f}, v, "e & ~out -> f");
+        require_entailed(true, {-e, -f,  o}, v, "e & f -> out");
+        require_entailed(true, { e, -o, g}, v, "~e & ~out -> g");
+        require_entailed(true, { e, -g,  o}, v, "~e & g -> out");
+    }
+
+    // ---- Maj: each of the three variables can serve as the control.
+    for (int ctrl = 0; ctrl < 3; ++ctrl) {
+        CnfFormula enc;
+        const int a = enc.new_var(), b = enc.new_var(),
+                  c = enc.new_var(), o = enc.new_var();
+        SatEncoder::encode_maj(enc, a, b, c, o);
+        const std::vector<int> v = {a, b, c, o};
+        const int x = v[ctrl];
+        const int p = v[(ctrl + 1) % 3];
+        const int q = v[(ctrl + 2) % 3];
+        const std::string tag = " ctrl=" + std::to_string(ctrl);
+
+        // x = 1 -> o = p OR q
+        require_entailed(false, {-x, -o, p, q}, v, ("x & o -> p|q" + tag).c_str());
+        require_entailed(false, {-x, -p, o},    v, ("x & p -> o" + tag).c_str());
+        require_entailed(false, {-x, -q, o},    v, ("x & q -> o" + tag).c_str());
+        // x = 0 -> o = p AND q
+        require_entailed(false, { x,  p, -o},   v, ("~x & ~p -> ~o" + tag).c_str());
+        require_entailed(false, { x,  q, -o},   v, ("~x & ~q -> ~o" + tag).c_str());
+        require_entailed(false, { x, -p, -q, o}, v, ("~x & p & q -> o" + tag).c_str());
+    }
+}
+
 int main() {
     std::cout << "===============================================================\n"
               << "            SHA-256 Framework Test Suite                       \n"
@@ -1584,6 +1669,7 @@ int main() {
 RUN_TEST(test_pinning_all_words_proves_unsat);
     RUN_TEST(test_dobbertin_state_constraint_pins_msb_first);
     RUN_TEST(test_dobbertin_rejects_out_of_range_round);
+    RUN_TEST(test_nonlinear_encodings_are_conditioned_projection_complete);
     RUN_TEST(test_sat_invalid_round_rejection);
     RUN_TEST(test_anti_clamping_api);
     RUN_TEST(test_sat_end_to_end_with_solver);

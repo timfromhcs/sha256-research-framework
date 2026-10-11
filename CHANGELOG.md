@@ -2,6 +2,87 @@
 
 All notable changes to the SHA-256 Research Framework will be documented in this file.
 
+## [4.3.0] - 2026-10-11
+
+Adds **external witness verification** and a **second, independent solver core**.
+The framework still cannot *solve* 19- or 20-round preimages on commodity
+hardware, but it can now corroborate published ones and cross-check its own
+encodings against a solver that shares none of its code.
+
+### Added
+
+- **`tools/verify_published.py` — external witness verification.** Confirms
+  eight published reduced-round preimages with the segregated
+  `IndependentVerifier`, each paired with a **negative control** at a
+  neighbouring round count.
+  - **8/8 verified.** P1–P7 at 19 rounds (Basra 2026,
+    `github.com/kamb-code/sha256-r19-preimage`; P7 uses the all-ones target
+    also used by Zaikin, Constraints 2026), plus R20 at 20 rounds.
+  - Every positive witness verifies with Hamming distance 0; every negative
+    control is rejected. **Deepest externally published preimage confirmed:
+    20 rounds.**
+  - A permissive verifier that accepted everything would fail the controls, so
+    the result is meaningful rather than vacuous.
+- **`tools/z3_bitvector_check.py` — Z3 bit-vector solver core.** An independent
+  SAT path with a different search heuristic, used as a cross-check.
+  - Four gates must agree before any result is reported: Z3 model, independent
+    Python recomputation, the segregated C++ verifier, and a negative control.
+    Disagreement between engines is reported as an error, not smoothed over.
+- **22 new tests** (39 C++, 74 Python):
+  - `tests/test_published_witnesses.py` — witness verification, negative
+    controls, bit-flip tamper rejection, segregated-engine provenance, and
+    failure when the verifier binary is missing.
+  - `tests/test_python_reference_kat.py` — known-answer tests for the Python
+    reference against the NIST vectors, `hashlib` across every padding
+    boundary, the framework's own K/IV tables, and all eight published
+    witnesses.
+  - `tests/test_z3_cross_check.py` — cross-engine agreement, honest `UNKNOWN`
+    reporting, and clean dependency handling.
+- **C++ test for encoder completeness against conditioned projections**
+  (Feng and Gao, ePrint 2026/1505). See *Fixed* below.
+
+### Fixed
+
+- **`tools/z3_bitvector_check.py` round constant.** `K[2]` was written as
+  `0xb5c0fbbc` instead of the correct `0xb5c0fbcf` — a single transposed digit
+  that produced plausible-looking but wrong digests in every run. Caught by
+  disagreement with the C++ verifier, then pinned by
+  `tests/test_python_reference_kat.py`.
+- **`locate_verifier()` in `tools/verify_published.py`** silently fell back to
+  a default binary when `SHA_VERIFIER_BIN` pointed at a missing file. An
+  explicit override is now authoritative: on a trust boundary, "the verifier
+  you asked for is not there" must not degrade into "I found another one".
+
+### Measured
+
+| Configuration | Deepest reduced-round preimage |
+| --- | --- |
+| CryptoMiniSat + XOR dialect + carry-save (native) | **18** |
+| Z3 bit-vector (eager bit-blasting) | **7** |
+| Unconstrained 18 rounds | ~13.2 s |
+| Dobbertin E@12/24 bit, 18 rounds | ~115.7 s |
+
+- The **11-round gap** between the native path and Z3 is not a defect in
+  either. SHA-256 is XOR-dominated, and native XOR clauses let the solver apply
+  Gaussian elimination; Z3 bit-blasts eagerly into plain CNF and loses that
+  structure. This is independent support for the XOR-dialect decision.
+- **Conditional-affine redundancy is unnecessary here.** Feng and Gao propose
+  redundant Ch/Maj clauses so that conditioned projections are visible to BCP.
+  The new C++ test checks our encodings directly against that criterion: every
+  conditioned projection implied by the Ch and Maj truth tables is *already*
+  entailed by the clauses we emit. The redundant clauses cannot therefore
+  improve propagation, which is consistent with the measured slowdown from
+  adding them. The paper's motivation remains sound for encodings that do not
+  meet this bar; ours does.
+
+### Not achieved
+
+- 19-round preimages remain **unsolved** by this framework. The published
+  19- and 20-round results rely on table-based context shaping and heavily
+  parameterised search, not a direct SAT encoding.
+- Z3 bit-vector does not scale to the round counts that matter; it is a
+  cross-check, not a path forward.
+
 ## [4.2.0] - 2026-10-10
 
 Implements **Dobbertin's state-register constraints** (Dobbertin 1998; applied

@@ -1,4 +1,4 @@
-# SHA-256 Cryptanalysis Research Framework (v4.2.0)
+# SHA-256 Cryptanalysis Research Framework (v4.3.0)
 
 [![Build (Windows MSVC)](https://github.com/timfromhcs/sha256-research-framework/actions/workflows/ci-build.yml/badge.svg?branch=main)](https://github.com/timfromhcs/sha256-research-framework/actions/workflows/ci-build.yml)
 [![Tests (Windows)](https://github.com/timfromhcs/sha256-research-framework/actions/workflows/ci-test.yml/badge.svg?branch=main)](https://github.com/timfromhcs/sha256-research-framework/actions/workflows/ci-test.yml)
@@ -28,9 +28,67 @@ A headless, local-first autonomous research platform for SHA-256 cryptanalysis w
 > Neither LLM, VLM, nor agent output is ever treated as cryptographic proof. Only the segregated `IndependentVerifier` arbitrates truth.
 
 - **Standard Full SHA-256 (64 rounds)**: **UNBROKEN**. No standard collision or full preimage has ever been discovered or claimed.
-- **Reduced-Round Demonstrations**: Inversions are verified by the independent reference engine. The deepest preimage this framework has confirmed is **18 rounds** of the compression function (see [`reports/preimage_scaling.md`](reports/preimage_scaling.md)). Round 19 did not resolve within the measured budget — that is a statement about this encoding and this budget, **not** a proof of impossibility.
+- **Reduced-Round Demonstrations**: Inversions are verified by the independent reference engine. The deepest preimage this framework has **solved** is **18 rounds** of the compression function (see [`reports/preimage_scaling.md`](reports/preimage_scaling.md)). Round 19 did not resolve within the measured budget — that is a statement about this encoding and this budget, **not** a proof of impossibility.
+- **External witness verification**: The framework **corroborates published results up to 20 rounds**. Eight externally published reduced-round preimages (seven at 19 rounds, one at 20) are confirmed by the segregated verifier, each paired with a negative control that must be rejected. This framework did not produce those witnesses — it independently confirms them.
+
+  ```bash
+  python tools/verify_published.py     # 8/8 verified
+  ```
+
 - **Why full SHA-256 is out of reach**: A full preimage costs 2^256 ≈ 1.16e77 compression-function evaluations. All Bitcoin mining combined (~1e21 H/s) would need roughly 1e56 years. This is a physical bound, not an implementation gap.
 - **Classification Non-Negotiables**: Reduced-round experiments are never conflated with full SHA-256. Modified or custom-IV experiments are categorized strictly as `SemiFreeStart` or rejected. Near-collisions are triage heuristics, not cryptographic breaks.
+
+---
+
+## Release v4.3.0: External Witness Verification and a Second Solver Core
+
+The framework cannot *solve* 19- or 20-round preimages on commodity hardware,
+but it can **verify** them and **cross-check itself**. Both capabilities were
+added in this release.
+
+### Confirming published results
+
+```bash
+python tools/verify_published.py
+```
+
+Confirms eight published reduced-round preimages — P1–P7 at 19 rounds (Basra
+2026) and R20 at 20 rounds — using the segregated `IndependentVerifier`.
+
+Every witness is also run at a **neighbouring round count and must be rejected**.
+Without that, a verifier that returned `true` unconditionally would appear to
+work. **Deepest externally published preimage confirmed: 20 rounds.**
+
+### Cross-checking with Z3
+
+```bash
+python tools/z3_bitvector_check.py --rounds 7 --timeout 240
+```
+
+Runs the same problem through Z3's bit-vector engine — a different search
+heuristic sharing no code with the CDCL path. No result is reported unless four
+gates agree: the Z3 model, an independent Python recomputation, the segregated
+C++ verifier, and a negative control.
+
+This caught a real bug immediately: a single transposed digit in a round
+constant (`K[2]`) made every digest wrong while still looking plausible. That
+class of error is invisible to inspection and to any single-engine test suite,
+and is precisely what cross-checking is for.
+
+**Measured reach: Z3 solves 7 rounds, the native path solves 18.** SHA-256 is
+XOR-dominated, so native XOR clauses let the solver apply Gaussian elimination;
+Z3 bit-blasts eagerly into plain CNF and loses that structure. Z3 is retained as
+a cross-check, not a path forward.
+
+### Conditional-affine redundancy ruled out
+
+A new C++ test checks our `Ch` and `Maj` encodings directly against the
+completeness criterion in Feng & Gao (ePrint 2026/1505). Every conditioned
+projection implied by the truth tables is **already entailed** by the clauses we
+emit, so the redundant clauses they propose cannot improve propagation here — a
+negative result established on structural grounds rather than by trial and error.
+
+Full measurements in [`docs/research/advanced-strategies.md`](docs/research/advanced-strategies.md).
 
 ---
 
