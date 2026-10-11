@@ -29,6 +29,30 @@
 #include <cmath>
 #include <algorithm>
 
+#if defined(_MSC_VER)
+#include <intrin.h>
+static inline int popcnt64(uint64_t x) { return (int)__popcnt64((unsigned __int64)x); }
+static inline uint64_t atomic_or64(uint64_t* p, uint64_t v) {
+    return (uint64_t)_InterlockedOr64((volatile __int64*)p, (__int64)v);
+}
+static inline uint32_t atomic_add32(uint32_t* p, uint32_t v) {
+    return (uint32_t)_InterlockedExchangeAdd((volatile long*)p, (long)v);
+}
+static inline uint32_t atomic_add16(uint16_t* p) {
+    return (uint32_t)_InterlockedExchangeAdd16((volatile short*)p, 1);
+}
+#else
+static inline int popcnt64(uint64_t x) { return __builtin_popcountll(x); }
+static inline uint64_t atomic_or64(uint64_t* p, uint64_t v) {
+    return __atomic_fetch_or(p, v, __ATOMIC_RELAXED);
+}
+static inline uint32_t atomic_add32(uint32_t* p, uint32_t v) {
+    return __atomic_fetch_add(p, v, __ATOMIC_RELAXED);
+}
+static inline uint32_t atomic_add16(uint16_t* p) {
+    return __atomic_fetch_add(p, (uint16_t)1, __ATOMIC_RELAXED);
+}
+#endif
 static inline uint32_t rotr(uint32_t x, int n) { return (x >> n) | (x << (32 - n)); }
 static inline uint32_t ch(uint32_t x, uint32_t y, uint32_t z) { return (x & y) ^ (~x & z); }
 static inline uint32_t maj(uint32_t x, uint32_t y, uint32_t z) { return (x & y) ^ (x & z) ^ (y & z); }
@@ -153,13 +177,201 @@ struct State {
 // proportionally fewer surviving paths -- a throughput trade-off, never a
 // correctness one.
 // ---------------------------------------------------------------------------
+static const uint64_t MAX_TABLE_BYTES = 6ull << 30;  // 6 GiB
+
+// Compact inverse table for u -> sg0(u) - u, storing EVERY root.
+//
+// The dense table wastes memory: 36.6% of its slots hold no root at all, and
+// capping at K roots costs 4(K+1) bytes per slot for a yield that saturates
+// (E[min(K,fibre)] tends to 1.5781). Measured fibre distribution:
+//
+//   K : E[min(K,fibre)] : (K+1) : E/(K+1)
+//   1 :      1.0000      :  2   :  0.5000
+//   2 :      1.4170      :  3   :  0.4723
+//   3 :      1.5425      :  4   :  0.3856
+//
+// so for a fixed byte budget the dense layout is worst at every K. Storing all
+// roots contiguously costs 0.633673 * 4 bytes per image slot and yields the
+// full mean of 1.5781 roots per attained image -- 2.5x better per byte than
+// dense K=1 and 6.5x better than dense K=3.
+//
+// Layout: a bitmap marking attained images, a rank directory over it, one
+// byte of multiplicity per image, and one contiguous array of roots grouped by
+// image in increasing image order (ascending u within each image).
+struct CompactInverseTable {
+    uint32_t bits = 0;
+    uint32_t range = 0;             // images kept are < range
+    std::vector<uint64_t> bitmap;   // range/64 words
+    std::vector<uint32_t> rankdir;  // prefix popcount every 512 images
+    std::vector<uint8_t> cnt;       // multiplicity per image, 0 = not attained
+    std::vector<uint32_t> roots;    // all roots, grouped by image
+    uint64_t stored = 0;
+    uint64_t attained = 0;
+
+    static const uint64_t RB = 64;   // rank directory block, in images
+
+    inline bool is_set(uint32_t i) const {
+        return (bitmap[i >> 6] >> (i & 63)) & 1ull;
+    }
+    // Number of attained images strictly below i.
+    // Number of attained images strictly below i. With a 64-image block this
+    // is a single masked popcount on top of the directory lookup.
+    inline uint32_t rank_before(uint32_t i) const {
+        const uint32_t block = i / (uint32_t)RB;
+        uint32_t r = rankdir[block];
+        const uint32_t wsel = i / 64u;
+        const uint32_t wStart = block * (uint32_t)(RB / 64u);
+        for (uint32_t k = wStart; k < wsel; ++k) r += (uint32_t)popcnt64(bitmap[k]);
+        if (wsel < bitmap.size()) {
+            const uint32_t b = i & 63u;
+            r += (uint32_t)popcnt64(bitmap[wsel] & ((b == 0) ? 0ull : (~0ull >> (63u - b))));
+        }
+        return r;
+    }
+
+    // The compact table needs a temporary O(2^B) cursor during construction, so
+    // its peak is larger than its steady state. Clamp against the peak.
+    void build(uint32_t b) {
+        const uint64_t peak_per_bit = 9ull;   // cnt16 + cursor + rootbase + roots
+        if (peak_per_bit << b > MAX_TABLE_BYTES) {
+            uint32_t cap = 32;
+            while (cap > 8 && (peak_per_bit << cap) > MAX_TABLE_BYTES) --cap;
+            fprintf(stderr, "compact table width %u exceeds the %.1f GiB budget; clamping to 2^%u\n",
+                    b, (double)MAX_TABLE_BYTES / (1024 * 1024 * 1024), cap);
+            b = cap;
+        }
+        bits = b;
+        range = (b >= 32) ? 0 : (1u << b);   // 0 means the full 2^32 space
+        uint32_t N = (b >= 32) ? 0xFFFFFFFFu : ((1u << b) - 1u);
+
+        bitmap.assign(((size_t)N + 64) / 64, 0ull);
+
+        uint16_t* cnt16 = new uint16_t[(size_t)N + 1u]();
+
+        const unsigned T = std::max(1u, std::thread::hardware_concurrency());
+
+        // Pass A: multiplicity per image, as a 16-bit atomic add. Several u map
+        // to the same image and they land in different thread chunks, so a
+        // plain ++ loses updates. (A byte-wise atomic add was tried first and
+        // corrupted neighbouring counters, losing most of the counts.)
+        std::vector<std::thread> th;
+        for (unsigned t = 0; t < T; ++t) {
+            th.emplace_back([&, t]() {
+                const uint64_t CH = 1ull << 24;
+                for (uint64_t base = (uint64_t)t * CH; base < 0x100000000ull;
+                     base += CH * T) {
+                    uint64_t end = base + CH;
+                    if (end > 0x100000000ull) end = 0x100000000ull;
+                    for (uint64_t u = base; u < end; ++u) {
+                        uint32_t uv = (uint32_t)u;
+                        uint32_t img = sg0(uv) - uv;
+                        if (img <= N) atomic_add16(&cnt16[img]);
+                    }
+                }
+            });
+        }
+        for (auto& x : th) x.join();
+
+        // Rank directory and bitmap, so rank_before() is O(1).
+        rankdir.assign(((size_t)N / (uint32_t)RB) + 2u, 0u);
+        uint64_t total = 0;
+        uint32_t running = 0;
+        for (uint32_t blk = 0; (uint64_t)blk * RB <= N; ++blk) {
+            rankdir[blk] = running;
+            uint32_t start = blk * (uint32_t)RB;
+            uint32_t stop = std::min<uint32_t>(start + (uint32_t)RB, N + 1u);
+            for (uint32_t i = start; i < stop; ++i) {
+                uint32_t c = cnt16[i];
+                if (c) { bitmap[i >> 6] |= 1ull << (i & 63); ++running; total += c; }
+            }
+        }
+        attained = running;
+        stored = total;
+        if (total > 0xFFFFFFFEull) { delete[] cnt16; return; }   // needs 32-bit slots
+        roots.assign((size_t)total, 0u);
+
+        // Pass B: place roots. The cursor holds each image's base *slot*,
+        // which is a count of ROOTS below that image, not of images below it.
+        std::vector<uint32_t> cursor((size_t)N + 1u);
+        {
+            uint32_t rr = 0;
+            for (uint32_t i = 0; i <= N; ++i) { cursor[i] = rr; rr += cnt16[i]; }
+        }
+
+        std::vector<std::thread> th2;
+        for (unsigned t = 0; t < T; ++t) {
+            th2.emplace_back([&, t]() {
+                const uint64_t CH = 1ull << 24;
+                for (uint64_t base = (uint64_t)t * CH; base < 0x100000000ull;
+                     base += CH * T) {
+                    uint64_t end = base + CH;
+                    if (end > 0x100000000ull) end = 0x100000000ull;
+                    for (uint64_t u = base; u < end; ++u) {
+                        uint32_t uv = (uint32_t)u;
+                        uint32_t img = sg0(uv) - uv;
+                        if (img > N || !cnt16[img]) continue;
+                        uint32_t slot = atomic_add32(&cursor[img], 1u);
+                        if (slot < total) roots[slot] = uv;
+                    }
+                }
+            });
+        }
+        for (auto& x : th2) x.join();
+
+        // Steady-state layout: one byte of multiplicity per image, a sampled
+        // root-base array, and the roots themselves.
+        cnt.assign((size_t)N + 1u, 0);
+        for (uint32_t i = 0; i <= N; ++i)
+            if (cnt16[i]) cnt[i] = (uint8_t)(cnt16[i] > 255 ? 255 : cnt16[i]);
+        rootbase.assign(((size_t)N / RB2) + 2u, 0u);
+        {
+            uint32_t rr = 0;
+            for (uint32_t blk2 = 0; (uint64_t)blk2 * RB2 <= N; ++blk2) {
+                rootbase[blk2] = rr;
+                uint32_t s = blk2 * RB2;
+                uint32_t e = std::min<uint32_t>(s + RB2, N + 1u);
+                for (uint32_t i = s; i < e; ++i) rr += cnt16[i];
+            }
+            rootbase[((size_t)N / RB2) + 1u] = rr;
+        }
+        delete[] cnt16;
+    }
+
+    // Base slot of each image, sampled every RB2 images. A full per-image
+    // offset array would cost 4 bytes per image -- exactly what the dense
+    // table already spends, which would erase the saving. rank_before() also
+    // does not work here: it counts attained *images*, whereas slots are
+    // indexed by *roots*.
+    static const uint32_t RB2 = 8;
+    std::vector<uint32_t> rootbase;   // (2^B / RB2) + 1 entries
+
+    inline uint32_t multiplicity(uint32_t image) const {
+        if (range && image >= range) return 0;
+        return cnt[image];
+    }
+    // The k-th root of `image`, or 0xFFFFFFFF when absent. Within an image the
+    // order is arbitrary: threads claim slots with an atomic cursor, and every
+    // claimed slot is a genuine root, which is all the search needs.
+    inline uint32_t root(uint32_t image, uint32_t k) const {
+        const uint32_t m = multiplicity(image);
+        if (k >= m) return 0xFFFFFFFFu;
+        const uint32_t blk = image / RB2;
+        uint32_t base = rootbase[blk];
+        const uint32_t lo = blk * RB2;
+        for (uint32_t j = lo; j < image; ++j) base += cnt[j];
+        return roots[base + k];
+    }
+    double mean_roots() const {
+        return attained ? (double)stored / (double)attained : 0.0;
+    }
+};
+
 // A hard memory ceiling. The table is 4 bytes per index, so this bounds the
 // requested width before anything is allocated. An earlier revision parsed
 // the width in hex, so "--bits 28" became 0x28 = 40 and the tool tried to
 // allocate a 17 GiB table on a machine with 11 GiB free. The budget check and
 // the decimal parser below exist so that a typo can never take the machine
 // down again.
-static const uint64_t MAX_TABLE_BYTES = 6ull << 30;  // 6 GiB
 
 struct InverseTable {
     uint32_t bits = 0;
@@ -221,6 +433,12 @@ struct InverseTable {
     inline uint32_t lookup(uint32_t image) const {
         if (image > mask) return 0xFFFFFFFFu;
         return tab[image];
+    }
+    inline uint32_t multiplicity(uint32_t image) const {
+        return (image <= mask && tab[image] != 0xFFFFFFFFu) ? 1u : 0u;
+    }
+    inline uint32_t root(uint32_t image, uint32_t k) const {
+        return (k == 0) ? lookup(image) : 0xFFFFFFFFu;
     }
     double image_fraction() const {
         return static_cast<double>(stored) / static_cast<double>(mask + 1ull);
@@ -338,6 +556,53 @@ struct Searcher {
         uint32_t T2_3 = Sig0(a2) + maj(a2, a1, a0);
         return 0u - T2_3 - SHA256_IV[4] - Sig1(e2)
                - ch(e2, e1, e0) - SHA256_K[3];
+    }
+
+    // Branching variant. Returns the number of (a1,a2,a3) triples satisfying all
+    // three constraints and the collapsed condition for this a0, writing the
+    // first one found into the out parameters.
+    //
+    // The dense table yields at most one root per image, so this reduces to
+    // try_a0(). The compact table yields E = 1.578 roots on average, and the
+    // extra branches are worth 1.578^3 in surviving paths for the same memory.
+    template <class T>
+    uint32_t branches(uint32_t a0, const T& tab, uint32_t* first) const {
+        const uint32_t B0 = b0(a0);
+        const uint32_t R0 = W16 - sg1(W14) - (a0 + W0) - A0 - B0;
+        const uint32_t m0 = tab.multiplicity(R0);
+        uint32_t found = 0;
+        for (uint32_t k0 = 0; k0 < m0; ++k0) {
+            uint32_t u0 = tab.root(R0, k0);
+            if (u0 == 0xFFFFFFFFu) continue;
+            uint32_t a1 = u0 - B0;
+
+            const uint32_t B1 = b1(a0, a1);
+            const uint32_t R1 = W17 - sg1(W15) - (a1 + B0) - A1 - B1;
+            const uint32_t m1 = tab.multiplicity(R1);
+            for (uint32_t k1 = 0; k1 < m1; ++k1) {
+                uint32_t u1 = tab.root(R1, k1);
+                if (u1 == 0xFFFFFFFFu) continue;
+                uint32_t a2 = u1 - B1;
+
+                const uint32_t B2 = b2(a0, a1, a2);
+                const uint32_t R2 = W18 - sg1(W16) - (a2 + B1) - A2 - B2;
+                const uint32_t m2 = tab.multiplicity(R2);
+                for (uint32_t k2 = 0; k2 < m2; ++k2) {
+                    uint32_t u2 = tab.root(R2, k2);
+                    if (u2 == 0xFFFFFFFFu) continue;
+                    uint32_t a3 = u2 - B2;
+                    if (maj(v, a3, a2) != a3) continue;
+                    if (have_c3) {
+                        State p = st;
+                        p.a(0) = a0; p.a(1) = a1; p.a(2) = a2; p.a(3) = a3;
+                        if (sg0(p.W(4)) + p.W(3) != kappa3) continue;
+                    }
+                    if (first && found == 0) { first[0] = a1; first[1] = a2; first[2] = a3; }
+                    ++found;
+                }
+            }
+        }
+        return found;
     }
 
     // Try one swept a0. Returns true and fills (a1,a2,a3) on a candidate that
@@ -618,8 +883,68 @@ int main(int argc, char** argv) {
         return 0;
     }
 
+    // Cross-check the compact table against brute force.
+//
+// The dense table keeps a single root per image (whichever the scan hit last),
+// and the compact table stores every root in an arbitrary order because
+// threads claim slots with an atomic cursor. So neither can be compared
+// element-wise. The invariant that actually matters is: every root the compact
+// table reports really maps to that image, and the multiplicity is exactly the
+// true number of preimages.
+if (std::strcmp(cmd, "tabletest") == 0) {
+        const uint32_t B = 20;   // small enough to verify by brute force
+        const uint32_t N = (1u << B) - 1u;
+        CompactInverseTable comp;
+        comp.build(B);
+        printf("compact : %llu roots over %llu images, mean %.6f\n",
+               (unsigned long long)comp.stored, (unsigned long long)comp.attained,
+               comp.mean_roots());
+
+        // Brute-force truth over the same image range.
+        std::vector<uint16_t> truth((size_t)N + 1u, 0);
+        for (uint64_t u = 0; u < 0x100000000ull; ++u) {
+            uint32_t uv = (uint32_t)u, img = sg0(uv) - uv;
+            if (img <= N && truth[img] < 65535) ++truth[img];
+        }
+
+        uint64_t bad = 0, cntbad = 0, checked = 0, tot = 0;
+        for (uint32_t img = 0; img <= N; img += 3) {
+            uint32_t m = comp.multiplicity(img);
+            if (m != truth[img]) { ++cntbad; if (cntbad < 4)
+                printf("  multiplicity img=%u: table %u, truth %u\n",
+                       img, m, truth[img]); }
+            ++checked;
+            for (uint32_t k = 0; k < m; ++k) {
+                uint32_t r = comp.root(img, k);
+                ++tot;
+                if (r == 0xFFFFFFFFu || (sg0(r) - r) != img) {
+                    ++bad;
+                    if (bad < 4) {
+                        uint32_t base = comp.rootbase[img / CompactInverseTable::RB2];
+                        printf("  root %u of img=%u is not a root\n", k, img);
+                        printf("    multiplicity=%u base=%u slots [%u..%u] of %llu\n",
+                               m, base, base, base + (m ? m - 1u : 0u),
+                               (unsigned long long)comp.stored);
+                        for (uint32_t j = base; j < base + m; ++j)
+                            printf("      slot %u -> %08x  maps to %08x\n", j,
+                                   comp.roots[j], sg0(comp.roots[j]) - comp.roots[j]);
+                    }
+                }
+            }
+            if (comp.root(img, m) != 0xFFFFFFFFu) ++bad;   // over-reported
+        }
+        printf("images checked %llu, multiplicity errors %llu\n",
+               (unsigned long long)checked, (unsigned long long)cntbad);
+        printf("roots checked %llu, invalid %llu\n",
+               (unsigned long long)tot, (unsigned long long)bad);
+        bool ok = (cntbad == 0 && bad == 0);
+        printf("compact table consistency: %s\n", ok ? "OK" : "FAILED");
+        return ok ? 0 : 1;
+    }
+
     if (std::strcmp(cmd, "search") == 0 && argc >= 3) {
         uint32_t bits = 30, contexts = 64, sweep = 1u << 21, seed = 1, rounds = 19;
+        bool bench = false, compact = false;
         uint32_t target[8];
         if (!parse_target(argv[2], target)) { printf("bad target\n"); return 2; }
         for (int i = 3; i + 1 < argc; i += 2) {
@@ -627,6 +952,17 @@ int main(int argc, char** argv) {
             // which silently turned "--bits 28" into 40 and asked for a 17 GiB
             // allocation.
             const std::string k(argv[i]);
+            // --table takes a word, not a number.
+            if (k == "--table") {
+                std::string v(argv[i + 1]);
+                if (v == "compact") compact = true;
+                else if (v == "dense") compact = false;
+                else {
+                    fprintf(stderr, "--table expects 'dense' or 'compact', got '%s'\n", v.c_str());
+                    return 2;
+                }
+                continue;
+            }
             char* endp = nullptr;
             unsigned long val = strtoul(argv[i + 1], &endp, 10);
             if (endp == argv[i + 1] || *endp != '\0') {
@@ -638,7 +974,9 @@ int main(int argc, char** argv) {
             else if (k == "--contexts") contexts = (uint32_t)val;
             else if (k == "--sweep") sweep = (uint32_t)val;
             else if (k == "--seed") seed = (uint32_t)val;
+            
             else if (k == "--rounds") rounds = val;
+            else if (k == "--bench") bench = (val != 0);
             else { fprintf(stderr, "unknown option %s\n", k.c_str()); return 2; }
         }
         if (bits > 32) {
@@ -652,13 +990,32 @@ int main(int argc, char** argv) {
         printf("\n");
 
         auto t0 = std::chrono::steady_clock::now();
-        InverseTable tab;
-        tab.build(bits);
+        // Both layouts expose multiplicity()/root(); the search is templated on
+        // that so the same code drives either one.
+        InverseTable dense;
+        CompactInverseTable comp;
+        if (compact) {
+            comp.build(bits);
+        } else {
+            dense.build(bits);
+        }
         auto t1 = std::chrono::steady_clock::now();
-        printf("table: 2^%u entries (%.2f GiB), %llu roots, density %.6f, %.1fs\n",
-               tab.bits, (double)tab.tab.size() * 4.0 / (1024 * 1024 * 1024),
-               (unsigned long long)tab.stored, tab.image_fraction(),
-               std::chrono::duration<double>(t1 - t0).count());
+        if (compact) {
+            printf("table: compact, width 2^%u, steady %.2f GiB, %llu roots over "
+                   "%llu images, mean %.4f roots/image, %.1fs\n",
+                   comp.bits,
+                   ((double)comp.cnt.size() + 4.0 * comp.rootbase.size() +
+                    4.0 * comp.roots.size()) / (1024.0 * 1024 * 1024),
+                   (unsigned long long)comp.stored,
+                   (unsigned long long)comp.attained, comp.mean_roots(),
+                   std::chrono::duration<double>(t1 - t0).count());
+        } else {
+            printf("table: dense, width 2^%u, %.2f GiB, %llu roots, density %.6f, %.1fs\n",
+                   dense.bits,
+                   (double)dense.tab.size() * 4.0 / (1024 * 1024 * 1024),
+                   (unsigned long long)dense.stored, dense.image_fraction(),
+                   std::chrono::duration<double>(t1 - t0).count());
+        }
 
         uint32_t st = seed * 2654435761u;
         auto rnd = [&st]() { st ^= st << 13; st ^= st >> 17; st ^= st << 5; return st; };
@@ -670,31 +1027,107 @@ int main(int argc, char** argv) {
         uint64_t c3_zero = 0;
         auto t2 = std::chrono::steady_clock::now();
 
-        for (uint32_t ci = 0; ci < contexts && (total_hits == 0 || measuring); ++ci) {
+        for (uint32_t ci = 0; ci < contexts && (total_hits == 0 || measuring || bench); ++ci) {
             Searcher se;
             se.R = (int)rounds;
             uint32_t V = rnd(), A6 = rnd(), A7 = rnd(), A10 = rnd(), A11 = rnd();
             se.setup(target, V, A6, A7, A10, A11);
             uint32_t base = rnd();
 
+            if (bench) {
+                // Measure the raw candidate rate stage by stage. The collapsed
+                // condition has probability (3/4)^32 ~ 1e-4, so time to first
+                // preimage cannot compare two layouts; what differs is the
+                // rate of surviving each lookup.
+                uint64_t triples = 0, s1hit = 0, s2hit = 0, s3hit = 0, roots1 = 0;
+                for (uint32_t i = 0; i < sweep; ++i) {
+                    uint32_t a0 = base + i * 0x9E3779B9u;
+                    const uint32_t B0 = se.b0(a0);
+                    const uint32_t R0 = se.W16 - sg1(se.W14) - (a0 + se.W0) - se.A0 - B0;
+                    const uint32_t m0 = compact ? comp.multiplicity(R0)
+                                                : dense.multiplicity(R0);
+                    if (!m0) continue;
+                    ++s1hit;
+                    roots1 += m0;
+                    for (uint32_t k0 = 0; k0 < m0; ++k0) {
+                        uint32_t u0 = compact ? comp.root(R0, k0) : dense.root(R0, 0);
+                        uint32_t a1 = u0 - B0;
+                        const uint32_t B1 = se.b1(a0, a1);
+                        const uint32_t R1 = se.W17 - sg1(se.W15) - (a1 + B0) - se.A1 - B1;
+                        const uint32_t m1 = compact ? comp.multiplicity(R1)
+                                                    : dense.multiplicity(R1);
+                        if (!m1) continue;
+                        ++s2hit;
+                        for (uint32_t k1 = 0; k1 < m1; ++k1) {
+                            uint32_t u1 = compact ? comp.root(R1, k1) : dense.root(R1, 0);
+                            uint32_t a2 = u1 - B1;
+                            const uint32_t B2 = se.b2(a0, a1, a2);
+                            const uint32_t R2 = se.W18 - sg1(se.W16) - (a2 + B1) - se.A2 - B2;
+                            const uint32_t m2 = compact ? comp.multiplicity(R2)
+                                                        : dense.multiplicity(R2);
+                            if (!m2) continue;
+                            ++s3hit;
+                            for (uint32_t k2 = 0; k2 < m2; ++k2) {
+                                uint32_t u2 = compact ? comp.root(R2, k2) : dense.root(R2, 0);
+                                uint32_t a3 = u2 - B2;
+                                if (maj(se.v, a3, a2) != a3) continue;
+                                uint32_t triple[3] = {a1, a2, a3};
+                                (void)triple;
+                                ++triples;
+                            }
+                        }
+                    }
+                }
+                double n = (double)sweep;
+                double f = (double)(1ull << bits) / 4294967296.0;
+                double mroot = compact ? comp.mean_roots() : 1.0;
+                // Hit probability per lookup. 0.633673 is the image density,
+                // and density * mean fibre = 1, so the expected number of
+                // root branches per lookup reduces to just f for the compact
+                // table -- that identity is what makes it worth storing every
+                // root rather than one.
+                double h = f * 0.633673 * mroot;
+                printf("context %u: swept %u\n", ci, sweep);
+                printf("  stage 1 hit %.6f  (predicted f*density*mean = %.6f)\n",
+                       (double)s1hit / n, h);
+                printf("  stage 2 hit %.6f  (predicted %.6f)\n",
+                       (double)s2hit / n, pow(h, 2));
+                printf("  stage 3 hit %.6f  (predicted %.6f)\n",
+                       (double)s3hit / n, pow(h, 3));
+                printf("  collapsed  %.8f  (predicted %.8f)\n",
+                       (double)triples / n, pow(h, 3) * pow(0.75, 32));
+                printf("  mean roots at stage 1: %.4f\n",
+                       s1hit ? (double)roots1 / (double)s1hit : 0.0);
+                total_swept += sweep;
+                total_hits += triples;
+                continue;
+            }
+
             for (uint32_t i = 0; i < sweep; ++i) {
                 uint32_t a0 = base + i * 0x9E3779B9u;   // spread the sweep
-                uint32_t a1, a2, a3, c3 = 0;
+                uint32_t a1 = 0, a2 = 0, a3 = 0, c3 = 0;
+                uint32_t triple[3] = {0, 0, 0};
                 ++total_swept;
+
+                // One code path for both layouts.
+                uint32_t nb = compact ? se.branches(a0, comp, triple)
+                                      : se.branches(a0, dense, triple);
+                if (nb == 0) continue;
                 if (measuring) {
-                    if (!se.try_a0(a0, tab, a1, a2, a3, &c3)) continue;
+                    State p = se.st;
+                    p.a(0) = a0; p.a(1) = triple[0];
+                    p.a(2) = triple[1]; p.a(3) = triple[2];
+                    c3 = sg0(p.W(4)) + p.W(3) - se.kappa3;
+                }
+                a1 = triple[0]; a2 = triple[1]; a3 = triple[2];
+                if (measuring) {
                     ++total_hits;
                     if (c3 == 0) ++c3_zero;
-                    // Cumulative count of candidates whose residual has its
-                    // low k bits equal to zero, compared against the uniform
-                    // model 2^-(32-k). Counting only the *first* matching k
-                    // would measure something else entirely.
                     for (int k = 0; k <= 32; ++k)
                         if ((c3 & (k == 32 ? 0xFFFFFFFFu
                                            : ((1ull << k) - 1ull))) == 0) ++c3_n[k];
                     continue;
                 }
-                if (!se.try_a0(a0, tab, a1, a2, a3)) continue;
                 ++total_hits;
 
                 uint32_t W[16];

@@ -80,7 +80,7 @@ class TestOptionSafety(unittest.TestCase):
         proc = self._run(["search", ALL_ONES, "--bits", "28",
                           "--contexts", "1", "--sweep", "1"])
         self.assertNotIn("0x1c", proc.stdout)   # 40 == 0x28
-        self.assertRegex(proc.stdout, r"table: 2\^28 entries")
+        self.assertRegex(proc.stdout, r"table: dense, width 2\^28\b")
 
     def test_oversized_width_is_clamped_not_allocated(self):
         proc = self._run(["search", ALL_ONES, "--bits", "32",

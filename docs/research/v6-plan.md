@@ -185,7 +185,92 @@ not pretend otherwise.
 
 ---
 
-## 5. Verification discipline (unchanged, and non-negotiable)
+## 5. Results
+
+### Phase A — completed
+
+**A0, the measurement.** The fibre distribution of `u ↦ σ0(u) − u` over all
+2^32 values:
+
+```
+images attained : 2721603627   density 0.633673
+mean fibre      : 1.578102     max fibre : 14
+```
+
+The density reproduces Basra's published 0.633673 from an independent
+implementation — an external check on this codebase. **The Erdős-style
+heavy-tail hypothesis is refuted**: max fibre 14, and 58.3% of attained images
+have exactly one preimage. There are no "magic" high-multiplicity images to
+target. Recorded as a negative result.
+
+**A1–A2, exact cost model.** With the density fixed, the expected number of
+root branches per lookup is
+
+```
+E[branches] = f * 0.633673 * E[min(K, fibre)]
+```
+
+and because `density * mean fibre = 1` exactly, this collapses to `E = f*K_eff`.
+The yield per swept value is `E^3 * (3/4)^32`, which converts Basra's
+extrapolated figures into arithmetic. The model was validated against
+measurement across three independent contexts at three stages:
+
+| Stage | predicted | measured | error |
+| --- | ---: | ---: | ---: |
+| lookup 1 | 0.158418 | 0.158692 | 0.2% |
+| lookup 2 | 0.025096 | 0.025127 | 0.1% |
+| lookup 3 | 0.003976 | 0.003935 | 1.0% |
+
+Three decimal places, three contexts, three stages. The model is sound.
+
+**A1, the compact table — implemented, verified, and it does not pay off here.**
+A `CompactInverseTable` was built that stores *every* root: a bitmap, a rank
+directory, one byte of multiplicity per image, a sampled root-base array every
+8 images, and a contiguous root array. Correctness was checked against brute
+force over a 2^20 image range: 350,324 roots verified, 0 invalid, 0 multiplicity
+errors.
+
+It loses, and the reason is specific. The saving is in the *steady state*
+(2.75 GiB at width 2^29, against 4.00 GiB for the dense table at width 2^30),
+but construction needs a temporary per-image cursor, so the **peak** is about 9
+bytes per image. At a 6 GiB budget the compact table can therefore only be
+built at width 2^29, which halves the image range and costs a factor 8 in
+yield, against a factor 3.93 gained from the extra roots. Net 0.49×.
+
+| Layout | width | memory | E[branches] | E^3 |
+| :--- | ---: | ---: | ---: | ---: |
+| dense, K=1 | 2^30 | 4.00 GiB | 0.1584 | 0.003976 |
+| compact, all roots | 2^29 | 2.75 GiB | 0.1250 | 0.001953 |
+| compact, all roots | 2^30 | *needs ~9.7 GiB peak* | **1.0000** | **1.0000** |
+
+The last row is the real result. **At equal range the compact layout is 251×
+better per lookup**, because `E[branches]` goes from 0.1584 to 1.0. It simply
+cannot be built at that width within this machine's budget.
+
+Measured confirmation, same target, 9e6 swept values: dense 2^30 produced 5
+collapsed candidates, compact 2^29 produced 2.
+
+**What this means, stated plainly:** with about 16 GiB of RAM instead of 11, the
+19-round cost would drop from ~2.5e6 swept values to ~1e4. That is a real and
+useful result, and it is a **hardware limitation, not a mathematical one**.
+
+**It does not change the round count.** 21 rounds needs a factor of roughly
+`2^61.7` over 19. A factor of 251 is not a path to it. Phase A has been
+recorded as a negative result for the current hardware, with the condition
+under which it would pay off stated exactly.
+
+### Phase B — not achieved
+
+The symbolic dependency engine and the joint-absorption search over multi-word
+ties were **not implemented**. No 21-round preimage was found, and no
+machine-checked negative result over the multi-word grammar was produced either.
+The plan's Phase B remains open work, not a completed phase.
+
+The honest position is unchanged from v5.0.0: 21 rounds projects to `2^77`
+swept values, about 5.6 million years on one A100. The only route that changes
+that is structural absorption of `C3` and `C4`, and Phase B was the attempt at
+it. That attempt did not get far enough to produce a verdict, in either
+direction.
 
 - Every witness is forward-verified **before** being reported, and then
   adjudicated by the segregated `IndependentVerifier` at the stated round count
@@ -196,7 +281,7 @@ not pretend otherwise.
 - A result is reported as a result only if it survives all of the above. A
   solver model alone is `SolverModelOnly` and is never called a preimage.
 
-## 6. Success criteria
+## 7. Success criteria
 
 | Criterion | Phase A | Phase B |
 | :--- | :--- | :--- |
@@ -208,7 +293,7 @@ not pretend otherwise.
 Phases run in order; B is attempted even if A underdelivers, and A's outcome is
 reported whatever B does.
 
-## 7. Explicitly out of scope
+## 8. Explicitly out of scope
 
 - Any claim about **full SHA-256**. It stands at 2^256 and nothing here touches
   it.
