@@ -416,7 +416,10 @@ static bool parse_target(const char* hex, uint32_t out[8]) {
     return true;
 }
 
+static uint32_t BITS = 32;
+
 int main(int argc, char** argv) {
+    if (const char* b = getenv("CS_FIBRE_BITS")) BITS = (uint32_t)strtoul(b, nullptr, 10);
     if (argc < 2) {
         printf("context_shaping -- reduced-round SHA-256 preimage search\n\n");
         printf("  selftest                     backward-chain round trip\n");
@@ -552,6 +555,66 @@ int main(int argc, char** argv) {
         for (int r = 11; r <= 18; ++r) printf("%08x ", s.a(r));
         printf("\n");
         (void)argv[2];
+        return 0;
+    }
+
+    // Measure the fibre-size distribution of u -> sigma0(u) - u.
+    //
+    // The context-shaping search recovers one root per image value, so the
+    // number of preimages an image value has bounds the yield of a single
+    // lookup. The mean is 1/0.633673 ~ 1.578, but a mean says nothing about
+    // the tail. Erdős's conjecture on the largest fibres of the totient
+    // function (OpenAI/math family 011) shows that for a highly non-injective
+    // arithmetic map the largest fibre can be polynomially larger than
+    // average -- so it is worth measuring rather than assuming.
+    if (std::strcmp(cmd, "fibres") == 0) {
+        const unsigned T = std::max(1u, std::thread::hardware_concurrency());
+        // `1u << 32` is undefined behaviour, which silently produced N = 1 on
+        // the first run of this measurement.
+        const uint32_t N = (BITS >= 32) ? 0xFFFFFFFFu : ((1u << BITS) - 1u);
+        const uint64_t NS = (uint64_t)N + 1ull;
+        std::vector<uint8_t> cnt((size_t)NS, 0);
+        std::vector<std::thread> th;
+        for (unsigned t = 0; t < T; ++t) {
+            th.emplace_back([&, t]() {
+                const uint64_t CH = 1ull << 24;
+                for (uint64_t base = (uint64_t)t * CH; base < 0x100000000ull;
+                     base += CH * T) {
+                    uint64_t end = base + CH;
+                    if (end > 0x100000000ull) end = 0x100000000ull;
+                    for (uint64_t u = base; u < end; ++u) {
+                        uint32_t uv = (uint32_t)u;
+                        uint32_t img = sg0(uv) - uv;
+                        if (img < N) ++cnt[img];
+                    }
+                }
+            });
+        }
+        for (auto& x : th) x.join();
+
+        uint64_t hist[256] = {0};
+        uint64_t present = 0, total = 0;
+        uint32_t maxf = 0;
+        for (uint32_t i = 0; i < N; ++i) {
+            uint8_t c = cnt[i];
+            if (c) { ++present; total += c; if (c > maxf) maxf = c; }
+            if (c < 256) ++hist[c];
+        }
+        printf("image space        : 2^%u (%llu values)\n", BITS,
+               (unsigned long long)NS);
+        printf("images attained    : %llu (density %.6f)\n",
+               (unsigned long long)present, (double)present / (double)NS);
+        printf("total preimages    : %llu (of 2^32 scanned)\n",
+               (unsigned long long)total);
+        printf("mean fibre         : %.6f over attained images\n",
+               (double)total / (double)present);
+        printf("max fibre          : %u\n", maxf);
+        printf("\nfibre size : count : fraction\n");
+        for (int c = 1; c <= 8 && c < 256; ++c) {
+            if (!hist[c]) continue;
+            printf("  %-12d : %-10llu : %.6f\n", c,
+                   (unsigned long long)hist[c], (double)hist[c] / (double)present);
+        }
         return 0;
     }
 
