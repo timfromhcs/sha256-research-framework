@@ -1,4 +1,4 @@
-# SHA-256 Cryptanalysis Research Framework (v5.0.0)
+# SHA-256 Cryptanalysis Research Framework (v5.0.0 + unreleased throughput work)
 
 [![Build (Windows MSVC)](https://github.com/timfromhcs/sha256-research-framework/actions/workflows/ci-build.yml/badge.svg?branch=main)](https://github.com/timfromhcs/sha256-research-framework/actions/workflows/ci-build.yml)
 [![Tests (Windows)](https://github.com/timfromhcs/sha256-research-framework/actions/workflows/ci-test.yml/badge.svg?branch=main)](https://github.com/timfromhcs/sha256-research-framework/actions/workflows/ci-test.yml)
@@ -28,13 +28,15 @@ A headless, local-first autonomous research platform for SHA-256 cryptanalysis w
 > Neither LLM, VLM, nor agent output is ever treated as cryptographic proof. Only the segregated `IndependentVerifier` arbitrates truth.
 
 - **Standard Full SHA-256 (64 rounds)**: **UNBROKEN**. No standard collision or full preimage has ever been discovered or claimed.
-- **Reduced-Round Demonstrations**: The deepest preimage this framework has **solved** is **19 rounds** of the compression function, found by the context-shaping construction in under a second on commodity hardware. The direct SAT encoder reaches **18 rounds** in ~13 s. Both are verified by the independent reference engine.
+- **Reduced-Round Demonstrations**: The deepest preimage this framework has **solved** is **19 rounds** of the compression function, found by the context-shaping construction in under a second on commodity hardware. The direct SAT encoder reaches **18 rounds** in ~13 s. Both are verified by the independent reference engine. The 19-round witness reproduces bit-identically and is re-derived from scratch by the current `main`.
 - **External witness verification**: The framework **corroborates published results up to 20 rounds**. Eight externally published reduced-round preimages (seven at 19 rounds, one at 20) are confirmed by the segregated verifier, each paired with a negative control that must be rejected. Those 20-round witnesses were produced elsewhere; this framework did not.
 
   ```bash
   python tools/verify_published.py     # 8/8 verified
   build\Release\context_shaping.exe selftest
   ```
+
+- **20 rounds: not reproduced here, and not claimed.** The current throughput work has cut the projected cost of a 20-round search to a multi-month laptop job (or a few days on a dedicated GPU), which is a large improvement over the eight-year figure an earlier estimate assumed — but the honest statement is unchanged: this framework verifies 20-round witnesses, it does not produce them. See [the corrected cost model](#corrected-cost-model-for-20-rounds).
 
 - **Why full SHA-256 is out of reach**: A full preimage costs 2^256 ≈ 1.16e77 compression-function evaluations. All Bitcoin mining combined (~1e21 H/s) would need roughly 1e56 years. This is a physical bound, not an implementation gap.
 - **Classification Non-Negotiables**: Reduced-round experiments are never conflated with full SHA-256. Modified or custom-IV experiments are categorized strictly as `SemiFreeStart` or rejected. Near-collisions are triage heuristics, not cryptographic breaks.
@@ -71,6 +73,7 @@ bottom of the release page.
 
 | Version | Headline |
 | :--- | :--- |
+| **unreleased** (`main`) | Threaded + prefetched search (**14.5x**), three correctness fixes incl. a corrupt table cache |
 | **v5.0.0** | Context shaping: this framework **solves 19 rounds**; 20 and 21 documented as out of reach |
 | v4.3.0 | External witness verification (8/8, up to 20 rounds) + Z3 cross-check |
 | v4.2.0 | Dobbertin state constraints — measured as a regression, reported as such |
@@ -149,6 +152,84 @@ crashed the machine. Both defects now have regression tests.
 
 Full measurements, derivations and the two real bugs found along the way in
 [`docs/research/advanced-strategies.md`](docs/research/advanced-strategies.md).
+
+---
+
+## Since v5.0.0: Measured Throughput and Three Correctness Fixes
+
+This section documents work that is on `main` but **not** in a tagged release.
+The deep result is unchanged: **19 rounds solved, 20 not reached.** What changed
+is the measured cost of the search, and the discovery of three defects that had
+been passing every existing test.
+
+### Throughput: 14.5x, measured rather than projected
+
+The inner loop is **latency-bound**, not compute-bound. The stage-1 lookup is a
+dependent chain of four random accesses into a 5.5 GiB table (`cnt` → `rootbase`
+→ the `cnt` bytes of the enclosing block → the root), every one of which is also
+a TLB miss on 4 KiB pages. Solving the rate equations at two table widths puts
+the cost at **~840 ns per stage-1 hit**, roughly 8x a plain DRAM miss.
+
+Two changes exploit that, both exposing them as flags:
+
+```bash
+# NOTE: --contexts must be >= --threads, or the pool idles
+context_shaping.exe search <target> --load table.bin \
+    --contexts 16 --sweep 3000000 --bench 1 --threads 16 --batch 16
+```
+
+| threads \ batch | 1 | 16 | 64 | 256 |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 8.3e6 | 1.07e7 | 1.07e7 | 1.04e7 |
+| 16 | 9.6e7 | **1.20e8** | 1.20e8 | 1.20e7 |
+
+Best configuration is **1.20e8 swept/s, 14.5x over single-threaded**. Prefetching
+alone is only 1.29x, below the 2x threshold it was measured against, and the two
+do not multiply: both fill the same memory-level parallelism slots.
+
+### Three defects, each found by measuring instead of assuming
+
+1. **The table cache returned a corrupt table.** `save_table` wrote a 32-byte
+   header; `load_table` read the arrays from offset 64. Every array was skewed by
+   32 bytes. The reloaded table loaded cleanly, reported correct-looking
+   statistics, and returned roots that were roots of nothing. Nothing caught it
+   because only *freshly built* tables were ever verified.
+2. **A genuine root was discarded as a sentinel.** `root()` returns
+   `0xFFFFFFFF` for "no such slot", but `0xFFFFFFFF` is itself a legitimate
+   root — `u = 0xFFFFFFFF` maps to image `0x20000000`. One candidate in 2^30 was
+   silently dropped.
+3. **The batch pipeline never advanced** (introduced and caught in the same
+   change): it computed `a0` from the slot index rather than the candidate
+   index, so every window re-processed the same candidates and reported a
+   stage-1 hit rate of exactly zero.
+
+`tabletest` now verifies cached tables and has a `--roundtrip` mode that writes,
+reads back, and checks the reloaded copy against brute force. Against the 2^30
+cached table it reports 45,969 multiplicity errors before the fix and zero
+after. Wired into CTest as `context-shaping-table-roundtrip`.
+
+### Corrected cost model for 20 rounds
+
+The v5.0.0 section above projects `2^45.4` swept values, "about 15 h on one
+A100". **That projection was wrong**, and measuring it is what exposed the error
+— it ignored that the stage-1 hit rate is `0.1585`, not the `0.25` the formula
+predicted. `R0` is uniform over the full 32-bit space, and the table stores only
+the attained images, which are 0.633673 of it.
+
+The collapsed-candidate rate scales as `E^3` with `E = f = 2^B / 2^32`, so each
+extra width bit divides the work by **8**:
+
+| width | candidates | at 1.20e8/s |
+| --- | ---: | ---: |
+| 2^30 | 2.27e15 | 219 days |
+| 2^31 | 2.84e14 | 27 days |
+| 2^32 | 3.55e13 | 3.4 days |
+
+So the honest statement is: **20 rounds is a multi-month compute job on a
+laptop**, or a few days on a dedicated GPU with enough memory for a width-2^32
+table. Basra's published A100 figure is consistent with days, not hours. No
+faster-than-`2^32` construction is known; a survey of 372 cryptanalysis families
+found nothing applicable.
 
 ---
 
@@ -427,6 +508,9 @@ growth factor without extrapolating a complexity-theoretic bound.
 | `test_determinism` | 8 Invariance Tests | Multi-run (A/B/C) determinism for CPU, threads, SAT, verifier | **PASS** |
 | `verifier-kat` | 4 Vectors | Standalone independent FIPS 180-4 reference engine KATs | **PASS** |
 | `verifier-negative` | 7 Hostile Vectors | Negative rejection gates: identical inputs, altered digests, custom IVs, round-count abuse | **PASS** |
+| `context-shaping-selftest` | 10 Identities | Algebraic identities of the submask construction | **PASS** |
+| `context-shaping-multifibre` | Fibre Structure | Substructure-amplification measurement of the inverse map | **PASS** |
+| `context-shaping-table-roundtrip` | Round-Trip | Table written to disk, reloaded, and checked against brute force | **PASS** |
 | `tests/test_v3_platform.py` | 15 Tests | Platform entities, anti-clamping, trust validation, verification integrity, REST API | **PASS** |
 | `tests/test_scheduler.py` | 25 Tests | Proposal envelope, LLM output parsing, scheduler escalation rules, trust boundary | **PASS** |
 | `tests/test_published_witnesses.py` | 8 Tests | External 19/20-round witness verification, negative controls, tamper rejection, segregated-engine provenance | **PASS** |
@@ -434,11 +518,12 @@ growth factor without extrapolating a complexity-theoretic bound.
 | `tests/test_z3_cross_check.py` | 7 Tests | Z3 cross-engine agreement, honest `UNKNOWN` reporting, dependency handling | **PASS** |
 | `verify_evidence.py` | Full Evidence DB | SHA-256 hash manifest verification across all experiment artifacts (21 manifests, 57 artifacts) | **PASS** |
 
-Totals: **39** C++ unit tests, **11** adversarial, **87** Python tests, **7** CTest targets.
+Totals: **39** C++ unit tests, **11** adversarial, **75** Python tests (plus 41
+subtests), **9** CTest targets.
 
-CI (`main` @ `8e0b59d`) runs seven checks, all green: `build-windows-msvc`,
-`build-windows-cpuonly`, `tests-windows`, `verifier-independent`,
-`security-audit`, `evidence-integrity`, `documentation-check`.
+CI (`main`) runs seven checks: `build-windows-msvc`, `build-windows-cpuonly`,
+`tests-windows`, `verifier-independent`, `security-audit`, `evidence-integrity`,
+`documentation-check`.
 
 ---
 

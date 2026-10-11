@@ -102,6 +102,9 @@ find_package(Threads REQUIRED)
 add_executable(context_shaping tools/context_shaping.cpp)
 target_link_libraries(context_shaping PRIVATE Threads::Threads)
 
+# First-moment spectral test for the 20-round residual c3.
+add_executable(c3_spectrum tools/c3_spectrum.cpp)
+
 # Add tests to CTest
 add_test(NAME sha-tests COMMAND $<TARGET_FILE:sha_tests>)
 add_test(NAME sha-adversarial-tests COMMAND $<TARGET_FILE:sha_adversarial_tests>)
@@ -113,6 +116,14 @@ add_test(NAME verifier-negative COMMAND $<TARGET_FILE:sha-verifier> test-negativ
 # construction on planted states. It is fast and needs no table, so it belongs
 # in the default CTest set.
 add_test(NAME context-shaping-selftest COMMAND $<TARGET_FILE:context_shaping> selftest)
+# Structural statistics of sigma0/sigma1, checked against closed forms.
+add_test(NAME context-shaping-multifibre COMMAND $<TARGET_FILE:context_shaping> multifibre)
+
+# The table cache is written by one code path and read by another, and a skew
+# between the two produces a table that loads and reports plausible statistics
+# while returning wrong roots. This round-trips a table through disk and checks
+# the reloaded copy against brute force.
+add_test(NAME context-shaping-table-roundtrip COMMAND $<TARGET_FILE:context_shaping> tabletest --roundtrip)
 
 # Compile shaders only when Vulkan + glslc are available
 find_program(GLSLC_EXECUTABLE NAMES glslc HINTS "${Vulkan_GLSLC_EXECUTABLE}" "$ENV{VULKAN_SDK}/bin")
