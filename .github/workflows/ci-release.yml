@@ -101,7 +101,7 @@ jobs:
       # `steps.<id>.outputs` while producing them.
       - name: Archive (Windows)
         if: runner.os == 'Windows'
-        id: archive
+        id: archive_win
         shell: pwsh
         run: |
           $name = "${{ steps.stage.outputs.name }}"
@@ -115,7 +115,7 @@ jobs:
 
       - name: Archive (Linux / macOS)
         if: runner.os != 'Windows'
-        id: archive
+        id: archive_nix
         shell: bash
         run: |
           set -euo pipefail
@@ -132,10 +132,21 @@ jobs:
           echo "$ARCHIVE.sha256" > archive_digest.txt
           echo "file=$ARCHIVE" >> "$GITHUB_OUTPUT"
 
-      - name: Upload build artifact
+      - name: Upload build artifact (Windows)
+        if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.stage.outputs.name }}-${{ steps.archive.outputs.file }}
+          name: ${{ steps.stage.outputs.name }}-${{ steps.archive_win.outputs.file }}
+          path: |
+            archive_file.txt
+            archive_digest.txt
+          if-no-files-found: error
+
+      - name: Upload build artifact (Linux / macOS)
+        if: runner.os != 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.stage.outputs.name }}-${{ steps.archive_nix.outputs.file }}
           path: |
             archive_file.txt
             archive_digest.txt
