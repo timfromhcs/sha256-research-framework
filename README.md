@@ -41,6 +41,49 @@ A headless, local-first autonomous research platform for SHA-256 cryptanalysis w
 
 ---
 
+## Download
+
+**Latest release: [v5.0.0](https://github.com/timfromhcs/sha256-research-framework/releases/tag/v5.0.0)** — Context Shaping, 19-round SHA-256 preimages.
+
+Every archive is built on a runner of the matching operating system. No binary in this repository is ever cross-labelled: if a platform cannot be built, the release ships without that asset rather than shipping a mislabelled one.
+
+| Platform | Asset | Size |
+| :--- | :--- | ---: |
+| Windows x64 | `sha256-research-framework-5.0.0-windows-x64.zip` | 263 KiB |
+| Linux x64 | `sha256-research-framework-5.0.0-linux-x64.tar.gz` | 315 KiB |
+| macOS arm64 | `sha256-research-framework-5.0.0-macos-arm64.tar.gz` | 217 KiB |
+
+Each asset ships with a `.sha256` digest file. Verify before use:
+
+```bash
+sha256sum -c sha256-research-framework-5.0.0-<platform>.<archive>.sha256
+
+# then check the binaries themselves
+bin/sha-verifier test-vectors        # NIST known-answer vectors
+bin/context_shaping selftest         # all ten algebraic identities
+```
+
+Builds are CPU-only; the Vulkan SDK is optional and is not present on the
+release runners. Source code is attached in the auto-generated archives at the
+bottom of the release page.
+
+### Release history
+
+| Version | Headline |
+| :--- | :--- |
+| **v5.0.0** | Context shaping: this framework **solves 19 rounds**; 20 and 21 documented as out of reach |
+| v4.3.0 | External witness verification (8/8, up to 20 rounds) + Z3 cross-check |
+| v4.2.0 | Dobbertin state constraints — measured as a regression, reported as such |
+| v4.1.0 | Cube-and-conquer and message pinning — also measured regressions |
+| v4.0.0 | Fabricated verification removed; SAT depth extended to 18 rounds |
+| v3.0.0 | Headless autonomous research platform |
+
+Pre-4.0 tags exist but the repository history was rewritten at v4.0.0 to remove
+fabricated verification results; v4.0.0 is the first release whose verification
+claims can be trusted.
+
+---
+
 ## Release v5.0.0: Context Shaping — This Framework Solves 19 Rounds
 
 v4.3.0 could *verify* published 19- and 20-round preimages. v5.0.0 **produces**

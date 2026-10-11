@@ -4,6 +4,10 @@ All notable changes to the SHA-256 Research Framework will be documented in this
 
 ## [5.0.0] - 2026-10-11
 
+Published as a GitHub release with prebuilt archives for Windows x64, Linux x64
+and macOS arm64. Each archive is built on a runner of the matching operating
+system and ships with a `.sha256` digest; no binary is cross-labelled.
+
 **This framework now solves 19 rounds of the SHA-256 compression function
 itself.** In v4.3.0 it could only *verify* published 19- and 20-round
 preimages. This release produces 19-round preimages in under a second on
