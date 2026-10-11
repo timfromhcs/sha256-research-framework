@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(sha256_research VERSION 4.3.0 LANGUAGES C CXX)
+project(sha256_research VERSION 5.0.0 LANGUAGES C CXX)
 
 enable_testing()
 
@@ -95,6 +95,13 @@ target_link_libraries(test_determinism PRIVATE sha256_core)
 add_executable(sha_adversarial_tests tests/adversarial/test_tamper_detection.cpp)
 target_link_libraries(sha_adversarial_tests PRIVATE sha256_core)
 
+# Context-shaping preimage search. Self-contained: it implements the reduced
+# round function itself so that it shares no code with the SAT encoder, which
+# is what makes it usable as an independent producer of preimage witnesses.
+find_package(Threads REQUIRED)
+add_executable(context_shaping tools/context_shaping.cpp)
+target_link_libraries(context_shaping PRIVATE Threads::Threads)
+
 # Add tests to CTest
 add_test(NAME sha-tests COMMAND $<TARGET_FILE:sha_tests>)
 add_test(NAME sha-adversarial-tests COMMAND $<TARGET_FILE:sha_adversarial_tests>)
@@ -102,6 +109,10 @@ add_test(NAME test-million-a COMMAND $<TARGET_FILE:test_million_a>)
 add_test(NAME test-determinism COMMAND $<TARGET_FILE:test_determinism>)
 add_test(NAME verifier-kat COMMAND $<TARGET_FILE:sha-verifier> test-vectors)
 add_test(NAME verifier-negative COMMAND $<TARGET_FILE:sha-verifier> test-negative)
+# The self-test proves the backward chain and every algebraic identity of the
+# construction on planted states. It is fast and needs no table, so it belongs
+# in the default CTest set.
+add_test(NAME context-shaping-selftest COMMAND $<TARGET_FILE:context_shaping> selftest)
 
 # Compile shaders only when Vulkan + glslc are available
 find_program(GLSLC_EXECUTABLE NAMES glslc HINTS "${Vulkan_GLSLC_EXECUTABLE}" "$ENV{VULKAN_SDK}/bin")

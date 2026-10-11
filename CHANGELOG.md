@@ -2,6 +2,118 @@
 
 All notable changes to the SHA-256 Research Framework will be documented in this file.
 
+## [5.0.0] - 2026-10-11
+
+**This framework now solves 19 rounds of the SHA-256 compression function
+itself.** In v4.3.0 it could only *verify* published 19- and 20-round
+preimages. This release produces 19-round preimages in under a second on
+commodity hardware, and documents precisely why 20 and 21 remain out of reach.
+
+### Added
+
+- **`tools/context_shaping.cpp` — context-shaping preimage search.** An
+  independent reimplementation of the submask family (Basra 2026,
+  `github.com/kamb-code/sha256-r19-preimage`); no code is shared with that
+  repository, and the equations are derived from FIPS 180-4 plus the
+  structural conditions of the construction.
+
+  Works backwards from the target so the target fixes eight state words with no
+  search, imposes `a4 = a5 = v` and `e8 = e9 = 0xFFFFFFFF` to exploit the
+  saturations `Ch(0xFFFFFFFF, y, z) = y` and `Maj(x, x, y) = x`, and so makes
+  the `W16, W17, W18` schedule constraints triangular in `(a1, a2, a3)`. Three
+  inverse-table lookups replace a fixed-point iteration, and the residual
+  collapses from a 32-bit modular equation to the bitwise condition
+  `Maj(v, a3, a2) == a3`.
+
+- **A verified 19-round preimage**, produced by this framework:
+
+  ```
+  1b2ffb528506b511c2db748f75d4fe52f
+  7674fd48874e7b9b374812290818441f
+  22f4d988399a64f2fbadc6a256f8ac32
+  4e45a975978b51418a0375599cf2cd1
+  ```
+
+  Segregated `IndependentVerifier`: `is_valid=true`,
+  `classification=ReducedRoundPreimage`, `hamming_distance=0`,
+  `engine_segregated=true`; **rejected at 18 and at 20 rounds**.
+
+  This is a round the direct SAT encoding could not reach at all (>3230 s
+  unresolved). SAT still reaches 18 rounds in ~13.2 s; the two are
+  complementary, not substitutes.
+
+- **Lossless table reduction to fit ~11 GiB of RAM.** The published
+  construction assumes a 16 GiB inverse table. Two reductions make it fit:
+  store roots only for image values below `2^B` (yield falls by
+  `(2^B/2^32)^3`, memory by `2^(32-B)`), and scan the *whole* 32-bit range of
+  `u` regardless of storage width. The second matters: restricting the scan to
+  the same range drops the image density from 0.6337 to 0.25 and costs a factor
+  of 16 in yield, because all three lookups must hit.
+
+- **20-round fourth constraint `C3`** plus a residual-measurement mode
+  (`CS_MEASURE_C3=1`) that reports the cumulative low-`k` zero counts of
+  `c3 = sigma0(W4) + W3 - kappa3`.
+
+- **13 new tests** (`tests/test_context_shaping.py`) and a new CTest target
+  `context-shaping-selftest`. Totals: 39 C++ unit, 11 adversarial, 87 Python,
+  7 CTest.
+
+### Fixed
+
+Two derivation bugs, both of which produced *plausible* output rather than
+failing loudly. Both were found by planted-state identity tests, not by running
+the search and reading the digest:
+
+- **`Maj(x, y, y) = y`, not `x`.** With `a5 = a4 = v` the saturated term
+  `T2^(7) = Sigma0(a6) + Maj(a6, v, v)` equals `Sigma0(a6) + v`. Using `a6`
+  silently corrupted `A_0` and `A_2`.
+- **`W_0` is not a constant.** Round 0 gives `W_0 = a_0 - const`, so it
+  carries the swept variable with coefficient +1. Treating it as constant broke
+  `C0` only — `C1` and `C2` still passed, the worst possible failure shape for a
+  hand-rolled search.
+
+The ten algebraic identities are now checked on planted states in 0.05 s, so
+this class of error cannot return silently.
+
+### Fixed (robustness)
+
+- **Hexadecimal option parsing caused a machine crash.** `--bits 28` was parsed
+  as `0x28 = 40`, and the tool requested a 17 GiB allocation on a machine with
+  ~11 GiB free, exhausting memory. Options are now decimal with validation, and
+  a hard memory budget clamps the table width *before* allocating. Both are
+  covered by regression tests.
+
+### Measured
+
+| Configuration | Rounds | Cost |
+| --- | ---: | --- |
+| Direct SAT, XOR + carry-save | 18 | ~13.2 s |
+| Direct SAT | 19 | > 3230 s, unresolved |
+| Context shaping, submask family | **19** | **~0.3 s** after a one-time table |
+
+- Throughput ~1.4e7 swept `a0` per second on this machine; one 19-round
+  preimage per ~6e6 swept values at `--bits 30`.
+- 20 rounds projects to `2^45.4` swept values, about 15 h on one A100.
+  **Not reproduced here.**
+- 21 rounds projects to `2^77` swept values, about **5.6 million years on a
+  single A100**. This is an arithmetic wall, not a missing implementation.
+
+### Not achieved
+
+- **No 20-round preimage was produced by this framework.** The deepest
+  *confirmed* result remains the externally published 20-round witness from
+  v4.3.0, which is not ours.
+- **21 rounds is out of reach** with this construction on any plausible
+  hardware. Basra's barrier analysis localises the obstruction to a single
+  wire, with a falsification search over ~1.6e6 legal context conditions finding
+  10.86 bits changed per flipped bit against a 2-bit absorption threshold.
+- The `C3` residual measurement is **not** a validation of the `2^-32` model:
+  24 candidates is far too small a sample. Basra himself reports that rate as a
+  working extrapolation.
+- Full SHA-256 remains unbroken at 2^256. Nothing here affects collision
+  resistance, and a reduced-round preimage of a compression function is not a
+  preimage of the padded hash.
+
 ## [4.3.0] - 2026-10-11
 
 Adds **external witness verification** and a **second, independent solver core**.

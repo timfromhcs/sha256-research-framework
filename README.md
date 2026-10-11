@@ -1,4 +1,4 @@
-# SHA-256 Cryptanalysis Research Framework (v4.3.0)
+# SHA-256 Cryptanalysis Research Framework (v5.0.0)
 
 [![Build (Windows MSVC)](https://github.com/timfromhcs/sha256-research-framework/actions/workflows/ci-build.yml/badge.svg?branch=main)](https://github.com/timfromhcs/sha256-research-framework/actions/workflows/ci-build.yml)
 [![Tests (Windows)](https://github.com/timfromhcs/sha256-research-framework/actions/workflows/ci-test.yml/badge.svg?branch=main)](https://github.com/timfromhcs/sha256-research-framework/actions/workflows/ci-test.yml)
@@ -28,15 +28,84 @@ A headless, local-first autonomous research platform for SHA-256 cryptanalysis w
 > Neither LLM, VLM, nor agent output is ever treated as cryptographic proof. Only the segregated `IndependentVerifier` arbitrates truth.
 
 - **Standard Full SHA-256 (64 rounds)**: **UNBROKEN**. No standard collision or full preimage has ever been discovered or claimed.
-- **Reduced-Round Demonstrations**: Inversions are verified by the independent reference engine. The deepest preimage this framework has **solved** is **18 rounds** of the compression function (see [`reports/preimage_scaling.md`](reports/preimage_scaling.md)). Round 19 did not resolve within the measured budget — that is a statement about this encoding and this budget, **not** a proof of impossibility.
-- **External witness verification**: The framework **corroborates published results up to 20 rounds**. Eight externally published reduced-round preimages (seven at 19 rounds, one at 20) are confirmed by the segregated verifier, each paired with a negative control that must be rejected. This framework did not produce those witnesses — it independently confirms them.
+- **Reduced-Round Demonstrations**: The deepest preimage this framework has **solved** is **19 rounds** of the compression function, found by the context-shaping construction in under a second on commodity hardware. The direct SAT encoder reaches **18 rounds** in ~13 s. Both are verified by the independent reference engine.
+- **External witness verification**: The framework **corroborates published results up to 20 rounds**. Eight externally published reduced-round preimages (seven at 19 rounds, one at 20) are confirmed by the segregated verifier, each paired with a negative control that must be rejected. Those 20-round witnesses were produced elsewhere; this framework did not.
 
   ```bash
   python tools/verify_published.py     # 8/8 verified
+  build\Release\context_shaping.exe selftest
   ```
 
 - **Why full SHA-256 is out of reach**: A full preimage costs 2^256 ≈ 1.16e77 compression-function evaluations. All Bitcoin mining combined (~1e21 H/s) would need roughly 1e56 years. This is a physical bound, not an implementation gap.
 - **Classification Non-Negotiables**: Reduced-round experiments are never conflated with full SHA-256. Modified or custom-IV experiments are categorized strictly as `SemiFreeStart` or rejected. Near-collisions are triage heuristics, not cryptographic breaks.
+
+---
+
+## Release v5.0.0: Context Shaping — This Framework Solves 19 Rounds
+
+v4.3.0 could *verify* published 19- and 20-round preimages. v5.0.0 **produces**
+a 19-round preimage itself, and documents honestly where 20 and 21 stop being
+reachable.
+
+| Path | Rounds | Cost here |
+| --- | ---: | --- |
+| Direct SAT encoding (CryptoMiniSat, XOR, carry-save) | 18 | ~13.2 s |
+| Direct SAT encoding | 19 | > 3230 s, unresolved |
+| **Context shaping (submask family)** | **19** | **~0.3 s** |
+
+```bash
+# One-time 4 GiB table, then roughly 6e6 swept values per preimage
+build\Release\context_shaping.exe search ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff \
+    --bits 30 --contexts 8 --sweep 3000000
+```
+
+Confirmed by the segregated verifier: `is_valid=true`,
+`classification=ReducedRoundPreimage`, `hamming_distance=0`, and **rejected at
+18 and at 20 rounds**.
+
+### Why this works where the SAT encoding does not
+
+A one-block preimage offers 512 free message bits against a 256-bit digest —
+satisfiable by a margin of 2^256. That is the difficulty, and it is why every
+search-side strategy in v4.1/v4.2 measured as a *regression*: none of them
+remove the overdetermination.
+
+The submask family removes it algebraically. Working backwards from the target
+fixes eight state words with no search at all; imposing `a4 = a5 = v` and
+`e8 = e9 = 0xFFFFFFFF` uses the saturations `Ch(0xFFFFFFFF, y, z) = y` and
+`Maj(x, x, y) = x` to make the schedule constraints *triangular*, so three
+table lookups replace a fixed-point iteration. The residual then collapses from
+a 32-bit modular equation to the bitwise condition `Maj(v, a3, a2) == a3`.
+
+### Fitting an 11 GiB machine
+
+The published construction assumes a 16 GiB inverse table. This machine has
+~11 GiB free. Two **lossless** reductions fix that: store roots only for image
+values below `2^B` (a lookup outside the range simply misses, so yield falls by
+`(2^B/2^32)^3` while memory falls by `2^(32-B)`), and scan the *whole* 32-bit
+range of `u` regardless of storage width — restricting the scan to the same
+range drops the image density from 0.6337 to 0.25 and costs a factor of 16 in
+yield, because all three lookups must hit.
+
+A hard memory budget clamps the width before allocating. This is not
+hypothetical: an earlier revision parsed options in hex, so `--bits 28` became
+`40` and the tool requested a 17 GiB allocation, which exhausted memory and
+crashed the machine. Both defects now have regression tests.
+
+### Honest limits
+
+- **20 rounds: not reproduced here.** The fourth constraint adds `2^-32`.
+  Projected cost is `2^45.4` swept values, about 15 h on one A100. The
+  published 20-round witnesses remain the deepest *confirmed* result, and they
+  are not ours.
+- **21 rounds: an arithmetic wall.** Two more exact constraints give `2^64`
+  over 19 rounds, about `2^77` swept values — roughly **5.6 million years on a
+  single A100**, still ~5.6 years on a million of them. Basra's barrier
+  analysis localises the obstruction to one wire. This is an open research
+  problem, not a missing implementation.
+
+Full measurements, derivations and the two real bugs found along the way in
+[`docs/research/advanced-strategies.md`](docs/research/advanced-strategies.md).
 
 ---
 
@@ -322,7 +391,7 @@ growth factor without extrapolating a complexity-theoretic bound.
 | `tests/test_z3_cross_check.py` | 7 Tests | Z3 cross-engine agreement, honest `UNKNOWN` reporting, dependency handling | **PASS** |
 | `verify_evidence.py` | Full Evidence DB | SHA-256 hash manifest verification across all experiment artifacts (21 manifests, 57 artifacts) | **PASS** |
 
-Totals: **39** C++ unit tests, **11** adversarial, **74** Python tests, **6** CTest targets.
+Totals: **39** C++ unit tests, **11** adversarial, **87** Python tests, **7** CTest targets.
 
 CI (`main` @ `8e0b59d`) runs seven checks, all green: `build-windows-msvc`,
 `build-windows-cpuonly`, `tests-windows`, `verifier-independent`,
@@ -407,7 +476,7 @@ Research & Experimentation:
 ## Architecture Overview
 
 ```
-├── CMakeLists.txt              # Modern CMake build configuration (v4.3.0)
+├── CMakeLists.txt              # Modern CMake build configuration (v5.0.0)
 ├── CMakePresets.json           # Native Windows MSVC & Ninja presets
 ├── include/sha256_research/    # C++ Public Headers
 │   ├── core/                   # Word rotations, bitwise functions, FIPS constants

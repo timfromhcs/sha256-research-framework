@@ -41,3 +41,6 @@ __pycache__/
 *.tmp
 *.log
 hf_space/evidence/
+
+# MSVC intermediate files
+*.obj

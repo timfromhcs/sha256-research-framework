@@ -1,4 +1,4 @@
-# Advanced Search Strategies (v4.3.0)
+# Advanced Search Strategies (v5.0.0)
 
 This document records the search techniques implemented beyond the direct SAT
 encoding, and — more importantly — **what they actually measured**. Four were
@@ -341,3 +341,157 @@ now be ruled out on grounds other than "we tried it and it was slower".
   method such as context shaping.
 - Full SHA-256 preimage resistance stands at 2^256. Nothing in this document
   changes that.
+
+---
+
+## v5.0.0: Context Shaping � 19 rounds solved by this framework
+
+### The result
+
+This framework now **produces** a 19-round SHA-256 compression-function
+preimage itself, rather than only verifying published ones.
+
+| Path | Rounds | Cost on this machine |
+| --- | ---: | --- |
+| Direct SAT encoding (CryptoMiniSat, XOR, carry-save) | **18** | ~13.2 s |
+| Direct SAT encoding | 19 | > 3230 s, unresolved |
+| **Context shaping (submask family)** | **19** | **~0.3 s**, after a one-time 4 GiB table |
+
+Witness produced by `context_shaping`, all-ones target:
+
+```
+1b2ffb528506b511c2db748f75d4fe52f
+7674fd48874e7b9b374812290818441f
+22f4d988399a64f2fbadc6a256f8ac32
+4e45a975978b51418a0375599cf2cd1
+```
+
+Confirmed by the segregated `IndependentVerifier`:
+`is_valid=true`, `classification=ReducedRoundPreimage`, `hamming_distance=0`,
+`engine_segregated=true`. Rejected at 18 and at 20 rounds.
+
+### Why this works when the SAT encoding does not
+
+A one-block preimage gives 512 free message bits against a 256-bit digest:
+the instance is satisfiable by a margin of 2^256. That is the problem. CDCL
+has to thread one solution through a deep, well-mixed circuit, and at 19 rounds
+it cannot. This is why v4.1 and v4.2 measured cube-and-conquer, message pinning
+and Dobbertin constraints as *regressions* � none of them remove the
+overdetermination.
+
+The submask family (Basra 2026) removes it algebraically instead:
+
+1. **Work backwards.** Subtracting the IV from the target fixes `a_15..a_18`,
+   and four inverted rounds extend the chain to `a_11`. No search.
+2. **Choose the context, do not randomise it.** Imposing `a4 = a5 = v` and
+   `e8 = e9 = 0xFFFFFFFF` uses the saturations `Ch(0xFFFFFFFF, y, z) = y` and
+   `Maj(x, x, y) = x` to make the schedule constraints on `W16, W17, W18`
+   *triangular* in `(a1, a2, a3)`.
+3. **Three table lookups replace a fixed-point iteration.** Each constraint is
+   `sigma0(u) - u = R`, solved from an inverse table.
+4. **The residual collapses to a bitwise condition.** What was a 32-bit
+   modular check becomes `Maj(v, a3, a2) == a3`, which holds for exactly
+   `3^32` of the `2^64` pairs � probability `(3/4)^32 = 1.0045e-4`.
+
+Measured on this machine: ~1.4e7 swept `a0` per second, one 19-round preimage
+per ~6e6 swept values, matching the model
+`1 / (0.6337^3 * (3/4)^32) = 39124` scaled by the reduced table width.
+
+### Fitting the table to 11 GiB instead of 16 GiB
+
+The published construction assumes a full 2^32 inverse table: 16 GiB. This
+machine has ~11 GiB free, and a full table is not an option.
+
+Two lossless reductions make it fit, and both are throughput trade-offs rather
+than correctness changes:
+
+- **Range truncation.** Store roots only for image values below `2^B`. A lookup
+  outside that range simply misses, so the yield drops by `(2^B / 2^32)^3` while
+  memory drops by `2^(32-B)`. At `B = 30` the table is 4 GiB and the sweep
+  requirement rises from ~39k to ~2.5e6 � about 0.3 s of extra work.
+- **Full-range scan.** Crucially, the *scan* over `u` must cover the whole
+  32-bit range even when storage is truncated. Restricting the scan to the same
+  range drops the image density from 0.6337 to 0.25 and costs a factor of 16 in
+  yield, because all three lookups must hit.
+
+A hard memory budget clamps the width before anything is allocated. This is not
+hypothetical hardening: an earlier revision parsed its numeric options in hex,
+so `--bits 28` became `40` and the tool attempted a 17 GiB allocation, which
+exhausted memory and took the machine down. The parser is now decimal, the
+budget is enforced, and both are covered by regression tests.
+
+### What the derivation cost, and how the bugs were caught
+
+Two real bugs were found and fixed during implementation. Both are worth
+recording because both produced *plausible* output rather than crashing:
+
+- **`Maj(x, y, y) = y`, not `x`.** With `a5 = a4 = v`, the saturated term
+  `T2^(7) = Sigma0(a6) + Maj(a6, v, v)` equals `Sigma0(a6) + v`, not
+  `Sigma0(a6) + a6`. This silently corrupted `A_0` and `A_2`.
+- **`W_0` is not a constant.** Round 0 gives `W_0 = a_0 - const`, so it carries
+  the swept variable with coefficient +1. Treating it as constant broke `C_0`
+  only � `C_1` and `C_2` still passed, which is the worst possible failure
+  shape for a hand-rolled search.
+
+Neither was found by running the search and looking at the digest. Both were
+found by **planted-state identity tests**: for arbitrary `a0..a3`, check that
+`W_{j+1} = a_{j+1} + B_j`, that `W_{10} = A_1 - a_2` and `W_{11} = A_2 - a_3`
+hold for every `a_3`, and that the `A_0` residual is exactly
+`Maj(v, a3, a2) - a_3`. These ten identities run in 0.05 s and are now a
+CTest target. The search itself independently reported the failure as
+`C0=FAIL C1=ok C2=ok`, which is what localised it.
+
+### Twenty rounds: measured cost model, not a result
+
+At 20 rounds a fourth schedule constraint `C3` on `W19` appears. It is not
+solved by a lookup; it reduces to a residual
+`c3 = sigma0(W4) + W3 - kappa3` that must vanish, contributing a further factor
+of `2^-32`.
+
+The tool implements `C3` and can measure its residual distribution
+(`CS_MEASURE_C3=1`). The honest reading of what that shows:
+
+- The cumulative low-`k` zero counts on 24 candidates are consistent with the
+  uniform model, but **24 candidates is far too small a sample to say
+  anything** about an exact-zero rate.
+- Basra himself reports `P(c3 = 0) = 2^-32` as a *working extrapolation, not a
+  measured exact-zero rate*. This framework does not improve on that.
+
+Projected cost with a full-width table: about `2^45.4` swept `a0`. At the
+`8.5e8` per second Basra reports on an A100 that is ~15 h of one GPU. **This
+framework did not reproduce a 20-round preimage.** The v4.3.0 external
+witnesses still stand as the deepest confirmed 20-round result, and they are
+someone else's witnesses, not ours.
+
+### Twenty-one rounds: an arithmetic wall, not a missing idea
+
+21 rounds adds two more exact 32-bit constraints. Under the independence model
+that is a factor `2^64` over 19 rounds, i.e. about `2^77` swept `a0`. At
+`8.5e8` per second:
+
+```
+2^77 / 8.5e8  ~  1.8e14 s  ~  5.6 million years on one A100
+```
+
+With a million A100s it is still ~5.6 years. Basra's own barrier analysis
+localises the obstruction to a single wire � the `a5 -> C1` edge through
+`Sigma0(a5)` � and reports a falsification search over ~1.6e6 legal context
+conditions finding a minimum of 10.86 bits changed per flipped bit, against the
+2-bit threshold at which absorption would become possible.
+
+**21 rounds is not reachable with this method on any hardware that plausibly
+exists.** Reporting it as an engineering gap would be misleading. It is a
+genuine open research problem, and the useful thing this framework can do
+about it is state the wall precisely, which is what the numbers above do.
+
+### What this changes, and what it does not
+
+- Changes: the framework solves 19 rounds itself, in under a second, on
+  commodity hardware. The 19/20-round gap in v4.3.0 was a *verification* claim;
+  it is now a *production* claim at 19 rounds.
+- Does not change: full SHA-256 stands at 2^256. Nothing here touches
+  collision resistance, and a reduced-round preimage of a compression function
+  is not a preimage of the padded hash.
+- Does not change: the direct SAT encoder still tops out at 18 rounds. The
+  algebraic method is a different tool for a different shape of problem, and
+  the two results are complementary rather than one replacing the other.
