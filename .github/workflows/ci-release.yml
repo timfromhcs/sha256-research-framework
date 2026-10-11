@@ -45,10 +45,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Read version from the tag
+      - name: Read the version to stamp into asset names
         id: ver
         shell: bash
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: |
+          # On a tag push GITHUB_REF_NAME is the tag, but under
+          # workflow_dispatch it is the *branch*, which previously stamped
+          # "main" into every published filename.
+          TAG="${{ inputs.tag || github.ref_name }}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          echo "building $TAG (version ${TAG#v})"
 
       - name: Set up CMake
         uses: jwlawson/actions-setup-cmake@v2
