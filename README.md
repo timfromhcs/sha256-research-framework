@@ -309,15 +309,24 @@ growth factor without extrapolating a complexity-theoretic bound.
 
 | Target Name | Test Count | Description | Status |
 | :--- | :--- | :--- | :--- |
-| `sha-tests` | 30 Unit Tests | Primitives, padding sweep, differential, SAT dialects, adder semantics, solver replay | **PASS** |
-| `sha-adversarial-tests` | 11 Adversarial Tests | Hostile tamper detection, fake claims, metadata forgery guardrails | **PASS** |
-| `test-million-a` | 1 NIST KAT | NIST 1,000,000 `'a'` character vector verification | **PASS** |
-| `test-determinism` | 8 Invariance Tests | Multi-run (A/B/C) determinism for CPU, threads, SAT, verifier | **PASS** |
+| `sha_tests` | 39 Unit Tests | Primitives, padding sweep, differential, SAT dialects, adder semantics, Dobbertin constraints, solver replay, conditioned-projection completeness | **PASS** |
+| `sha_adversarial_tests` | 11 Adversarial Tests | Hostile tamper detection, fake claims, metadata forgery guardrails | **PASS** |
+| `test_million_a` | 1 NIST KAT | NIST 1,000,000 `'a'` character vector verification | **PASS** |
+| `test_determinism` | 8 Invariance Tests | Multi-run (A/B/C) determinism for CPU, threads, SAT, verifier | **PASS** |
 | `verifier-kat` | 4 Vectors | Standalone independent FIPS 180-4 reference engine KATs | **PASS** |
 | `verifier-negative` | 7 Hostile Vectors | Negative rejection gates: identical inputs, altered digests, custom IVs, round-count abuse | **PASS** |
 | `tests/test_v3_platform.py` | 15 Tests | Platform entities, anti-clamping, trust validation, verification integrity, REST API | **PASS** |
 | `tests/test_scheduler.py` | 25 Tests | Proposal envelope, LLM output parsing, scheduler escalation rules, trust boundary | **PASS** |
-| `verify_evidence.py` | Full Evidence DB | SHA-256 hash manifest verification across all experiment artifacts | **PASS** |
+| `tests/test_published_witnesses.py` | 8 Tests | External 19/20-round witness verification, negative controls, tamper rejection, segregated-engine provenance | **PASS** |
+| `tests/test_python_reference_kat.py` | 7 Tests | Known-answer tests for the independent Python reference (NIST vectors, `hashlib` across padding boundaries, published witnesses) | **PASS** |
+| `tests/test_z3_cross_check.py` | 7 Tests | Z3 cross-engine agreement, honest `UNKNOWN` reporting, dependency handling | **PASS** |
+| `verify_evidence.py` | Full Evidence DB | SHA-256 hash manifest verification across all experiment artifacts (21 manifests, 57 artifacts) | **PASS** |
+
+Totals: **39** C++ unit tests, **11** adversarial, **74** Python tests, **6** CTest targets.
+
+CI (`main` @ `8e0b59d`) runs seven checks, all green: `build-windows-msvc`,
+`build-windows-cpuonly`, `tests-windows`, `verifier-independent`,
+`security-audit`, `evidence-integrity`, `documentation-check`.
 
 ---
 
@@ -398,7 +407,7 @@ Research & Experimentation:
 ## Architecture Overview
 
 ```
-├── CMakeLists.txt              # Modern CMake build configuration (v2.0.0)
+├── CMakeLists.txt              # Modern CMake build configuration (v4.3.0)
 ├── CMakePresets.json           # Native Windows MSVC & Ninja presets
 ├── include/sha256_research/    # C++ Public Headers
 │   ├── core/                   # Word rotations, bitwise functions, FIPS constants
@@ -419,9 +428,13 @@ Research & Experimentation:
 │   └── verifier/               # Segregated FIPS 180-4 reference engine
 ├── tests/                      # Automated test suite (KATs, Equivalence, Million 'a')
 │   └── adversarial/            # Tamper detection, anti-spoofing, hostile tests
+│   └── test_published_witnesses.py   # External 19/20-round witness verification
+│   └── test_python_reference_kat.py  # Known-answer tests for the Python reference
+│   └── test_z3_cross_check.py         # Cross-engine agreement
 ├── verifier/standalone/        # Standalone verifier CLI
-├── scripts/                    # Automation scripts (doctor, bootstrap, build, test, etc.)
 ├── tools/                      # Python utilities (train.py, analyze.py, report.py, init_db.py)
+│   ├── verify_published.py     # Confirm published 19/20-round witnesses (8/8)
+│   └── z3_bitvector_check.py   # Independent Z3 solver core, four-gate cross-check
 ├── evidence/                   # Immutable logs, manifests, and SQLite knowledge base
 ├── reports/                    # Machine-generated build, test, and benchmark reports
 └── docs/                       # Complete engineering and cryptanalysis documentation

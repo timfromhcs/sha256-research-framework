@@ -273,7 +273,7 @@ shared code with the CDCL path.
 | 8 | UNKNOWN @ 240 s | 0.0 s |
 | 18 | not attempted | **~13.2 s** |
 
-Z3's ceiling is **7 rounds** against our **18** — an 11-round gap.
+Z3's ceiling is **7 rounds** against our **18** â€” an 11-round gap.
 
 This is not a defect in either engine. SHA-256 is XOR-dominated: emitting the
 `Ch`, `Maj`, and `Sigma` relations as native XOR clauses lets the solver apply
@@ -297,7 +297,7 @@ Disagreement is surfaced as an error, not smoothed over.
 #### What the gates caught
 
 Gate 2 earned its place immediately. Z3 returned models that satisfied its own
-constraints but whose digest did not reproduce — `K[2]` had been written as
+constraints but whose digest did not reproduce â€” `K[2]` had been written as
 `0xb5c0fbbc` instead of `0xb5c0fbcf`. One transposed digit, invisible on
 inspection, wrong in every single run. The C++ verifier was right; the new
 Python reference was wrong.
@@ -310,7 +310,7 @@ entire argument for having them, and it is now pinned by
 
 Feng and Gao (ePrint 2026/1505) argue that Tseitin encodings of SHA-256's
 nonlinear functions can hide conditioned differential projections from BCP,
-and propose redundant CNF clauses to expose them — four for `Ch` and twelve for
+and propose redundant CNF clauses to expose them â€” four for `Ch` and twelve for
 `Maj` per bit.
 
 The new C++ test `test_nonlinear_encodings_are_conditioned_projection_complete`

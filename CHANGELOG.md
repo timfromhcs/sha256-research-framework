@@ -83,6 +83,24 @@ encodings against a solver that shares none of its code.
 - Z3 bit-vector does not scale to the round counts that matter; it is a
   cross-check, not a path forward.
 
+### Documentation
+
+- **README test matrix corrected**: the C++ unit-test count was still listed as
+  30 (actual: 39), and the three new Python test modules were missing. The
+  matrix now lists every target with its real count, plus totals (39 C++, 11
+  adversarial, 74 Python, 6 CTest) and the seven CI checks.
+- **Repository tree updated**: `tools/` and `tests/` now list the v4.3.0 files,
+  and `CMakeLists.txt` no longer claims v2.0.0.
+- Em-dash encoding damage in `docs/research/advanced-strategies.md` repaired;
+  the file is clean UTF-8.
+
+### CI
+
+All seven checks pass on `main` @ `8e0b59d` — no bypass was required:
+`build-windows-msvc`, `build-windows-cpuonly`, `tests-windows`,
+`verifier-independent`, `security-audit`, `evidence-integrity`,
+`documentation-check`.
+
 ## [4.2.0] - 2026-10-10
 
 Implements **Dobbertin's state-register constraints** (Dobbertin 1998; applied
