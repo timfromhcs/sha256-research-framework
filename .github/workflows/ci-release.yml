@@ -1,0 +1,155 @@
+name: Release Packaging
+
+# Builds distributable archives for every supported platform and attaches them
+# to a GitHub release.
+#
+# Scope note, deliberate: this workflow builds each artifact on a runner of the
+# matching operating system. A binary is never cross-labelled -- there is no
+# step anywhere in this repository that renames or re-labels a Windows build as
+# macOS or Linux. If a platform cannot be built here, the release ships without
+# that asset rather than shipping a mislabelled one.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build and publish (e.g. v5.0.0)'
+        required: true
+        type: string
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: windows-x64
+            archive: zip
+          - os: ubuntu-latest
+            label: linux-x64
+            archive: tar.gz
+          - os: macos-latest
+            label: macos-arm64
+            archive: tar.gz
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Read version from the tag
+        id: ver
+        shell: bash
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up CMake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmakeVersion: '3.28'
+
+      # CPU-only on purpose: the Vulkan SDK is not present on these runners and
+      # is an optional capability. Shipping a package that cannot run would be
+      # worse than shipping one without GPU acceleration.
+      - name: Configure (CPU only)
+        run: >
+          cmake -S . -B build
+          -DSHA256_ENABLE_VULKAN=OFF
+          -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --target sha-research sha-verifier context_shaping
+
+      - name: Smoke test the binaries that were just built
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            BIN=build/Release
+          else
+            BIN=build
+          fi
+          "$BIN/sha-verifier" test-vectors
+          "$BIN/context_shaping" selftest
+
+      - name: Stage the package
+        id: stage
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_OS" = "Windows" ]; then BIN=build/Release; else BIN=build; fi
+          PKG="sha256-research-framework-${{ steps.ver.outputs.version }}-${{ matrix.label }}"
+          mkdir -p "$PKG/bin" "$PKG/tools" "$PKG/docs"
+          cp "$BIN/sha-research" "$BIN/sha-verifier" "$BIN/context_shaping" "$PKG/bin/"
+          cp LICENSE README.md CHANGELOG.md CONTRIBUTING.md SECURITY.md "$PKG/"
+          cp tools/verify_published.py tools/z3_bitvector_check.py "$PKG/tools/"
+          cp docs/research/advanced-strategies.md \
+             docs/research/verification.md \
+             docs/research/terminology.md "$PKG/docs/"
+          echo "name=$PKG" >> "$GITHUB_OUTPUT"
+
+      - name: Archive
+        id: archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          NAME="${{ steps.stage.outputs.name }}"
+          if [ "${{ matrix.archive }}" = "zip" ]; then
+            zip -r "${NAME}.zip" "$NAME"
+            echo "file=${NAME}.zip" >> "$GITHUB_OUTPUT"
+          else
+            tar -czf "${NAME}.tar.gz" "$NAME"
+            echo "file=${NAME}.tar.gz" >> "$GITHUB_OUTPUT"
+          fi
+          # Publish the digest alongside the artifact so a downloader can
+          # check it without trusting the transport.
+          sha256sum "${{ steps.archive.outputs.file }}" > "${NAME}.${{ matrix.archive }}.sha256"
+          echo "digest_file=${NAME}.${{ matrix.archive }}.sha256" >> "$GITHUB_OUTPUT"
+          ls -la "${NAME}.${{ matrix.archive }}.sha256"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.stage.outputs.name }}-${{ steps.archive.outputs.file }}
+          path: |
+            ${{ steps.archive.outputs.file }}
+            ${{ steps.archive.outputs.digest_file }}
+          if-no-files-found: error
+
+  release:
+    name: Attach assets to the GitHub release
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all built archives
+        uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+
+      - name: List what was actually produced
+        run: ls -la assets
+
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" assets/* --clobber
+          else
+            gh release create "$TAG" assets/* \
+              --title "v5.0.0 -- Context Shaping: 19-Round SHA-256 Preimages" \
+              --notes-file RELEASE_NOTES.md \
+              --latest
+          fi
