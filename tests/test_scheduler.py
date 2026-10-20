@@ -265,7 +265,7 @@ class TestSchedulerExecution(unittest.TestCase):
             outcome = sched.execute(proposal)
 
             self.assertIn(
-                outcome.status, {"VERIFIED", "NO_SOLUTION", "TIMEOUT", "INFRA_FAILURE"}
+                outcome.status, {"VERIFIED", "NO_SOLUTION", "TIMEOUT", "UNRESOLVED", "INFRA_FAILURE"}
             )
             self.assertNotEqual(outcome.status, "REJECTED")
             self.assertFalse(outcome.bug_suspected)

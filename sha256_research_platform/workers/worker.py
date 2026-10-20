@@ -608,7 +608,7 @@ class ResearchWorkerPool:
                 (id, candidate_id, experiment_id, is_valid, classification, failure_reason,
                  verified_rounds, verified_by, engine_segregated, verified_at)
                 VALUES (?, ?, ?, 0, ?, ?, ?, 'IndependentVerifier', 1, ?)
-            """, (f"ver_{exp_id}", f"cand_{exp_id}", exp_id, classification,
+            """, (f"ver_{exp_id}", None, exp_id, classification,
                   reason, job["rounds"], datetime.now(timezone.utc).isoformat()))
             conn.execute("""
                 INSERT INTO metrics (experiment_id, metric_name, metric_value, unit)
