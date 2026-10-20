@@ -1,11 +1,13 @@
 cmake_minimum_required(VERSION 3.20)
-project(sha256_research VERSION 5.0.0 LANGUAGES C CXX)
+project(sha256_research VERSION 5.1.0 LANGUAGES C CXX)
 
 enable_testing()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+
+add_compile_definitions(SHA256_RESEARCH_VERSION="${PROJECT_VERSION}")
 
 # Compiler flags (portable: no mandatory AVX2; auto-vectorization only)
 if (MSVC)
@@ -125,6 +127,16 @@ add_test(NAME context-shaping-multifibre COMMAND $<TARGET_FILE:context_shaping> 
 # the reloaded copy against brute force.
 add_test(NAME context-shaping-table-roundtrip COMMAND $<TARGET_FILE:context_shaping> tabletest --roundtrip)
 
+# CLI contract smoke tests
+add_test(NAME cli-version COMMAND $<TARGET_FILE:sha-research> --version)
+add_test(NAME cli-help COMMAND $<TARGET_FILE:sha-research> --help)
+add_test(NAME verifier-version COMMAND $<TARGET_FILE:sha-verifier> --version)
+add_test(NAME verifier-help COMMAND $<TARGET_FILE:sha-verifier> --help)
+add_test(NAME context-shaping-version COMMAND $<TARGET_FILE:context_shaping> --version)
+add_test(NAME context-shaping-help COMMAND $<TARGET_FILE:context_shaping> --help)
+add_test(NAME c3-spectrum-version COMMAND $<TARGET_FILE:c3_spectrum> --version)
+add_test(NAME c3-spectrum-help COMMAND $<TARGET_FILE:c3_spectrum> --help)
+
 # Compile shaders only when Vulkan + glslc are available
 find_program(GLSLC_EXECUTABLE NAMES glslc HINTS "${Vulkan_GLSLC_EXECUTABLE}" "$ENV{VULKAN_SDK}/bin")
 if (GLSLC_EXECUTABLE AND SHA256_HAVE_VULKAN)
@@ -144,3 +156,45 @@ if (GLSLC_EXECUTABLE AND SHA256_HAVE_VULKAN)
     add_custom_target(compile_shaders ALL DEPENDS ${SPIRV_SHADERS})
     add_dependencies(sha256_core compile_shaders)
 endif()
+
+# Install & Packaging Rules (CPack)
+include(GNUInstallDirs)
+
+install(TARGETS sha-research sha-verifier context_shaping c3_spectrum
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    COMPONENT runtime
+)
+
+install(FILES LICENSE README.md CHANGELOG.md CONTRIBUTING.md SECURITY.md
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/sha256-research-framework
+    COMPONENT documentation
+)
+
+install(DIRECTORY docs/
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/sha256-research-framework/docs
+    COMPONENT documentation
+)
+
+install(FILES tools/verify_published.py tools/z3_bitvector_check.py
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/sha256-research-framework/tools
+    COMPONENT tools
+)
+
+set(CPACK_PACKAGE_NAME "sha256-research-framework")
+set(CPACK_PACKAGE_VENDOR "timfromhcs")
+set(CPACK_PACKAGE_VERSION_MAJOR ${PROJECT_VERSION_MAJOR})
+set(CPACK_PACKAGE_VERSION_MINOR ${PROJECT_VERSION_MINOR})
+set(CPACK_PACKAGE_VERSION_PATCH ${PROJECT_VERSION_PATCH})
+set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
+set(CPACK_RESOURCE_FILE_README "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
+
+if (WIN32)
+    set(CPACK_GENERATOR "ZIP")
+elseif (APPLE)
+    set(CPACK_GENERATOR "TGZ")
+else()
+    set(CPACK_GENERATOR "TGZ")
+endif()
+
+include(CPack)

@@ -10,6 +10,13 @@ import sys
 import glob
 import json
 import hashlib
+import argparse
+
+try:
+    import jsonschema
+    HAVE_JSONSCHEMA = True
+except ImportError:
+    HAVE_JSONSCHEMA = False
 
 def sha256_file(filepath):
     h = hashlib.sha256()
@@ -61,7 +68,36 @@ def compute_evidence_root_hash(evidence_dir="evidence"):
     canonical_text = "".join(lines).encode("utf-8")
     return hashlib.sha256(canonical_text).hexdigest().lower()
 
-def verify_evidence(evidence_dir="evidence"):
+def is_safe_relative_path(base_dir, target_path):
+    """
+    Ensures target_path resolves strictly within base_dir (prevents directory traversal).
+    """
+    if not target_path or os.path.isabs(target_path):
+        return False
+    if os.path.splitdrive(target_path)[0]:
+        return False
+    base_abs = os.path.abspath(base_dir)
+    target_abs = os.path.abspath(os.path.join(base_dir, target_path))
+    try:
+        common = os.path.commonpath([base_abs, target_abs])
+        return common == base_abs
+    except (ValueError, OSError):
+        return False
+
+def validate_schema(data, schema_path):
+    if not HAVE_JSONSCHEMA:
+        return True, "jsonschema not installed"
+    if not os.path.exists(schema_path):
+        return True, f"schema file not found: {schema_path}"
+    try:
+        with open(schema_path, "r", encoding="utf-8") as sf:
+            schema = json.load(sf)
+        jsonschema.validate(instance=data, schema=schema)
+        return True, "valid"
+    except Exception as e:
+        return False, str(e)
+
+def verify_evidence(evidence_dir="evidence", allow_empty=False, require_release_manifest=False, schema_dir="schemas"):
     print("===============================================================")
     print("        SHA-256 Evidence Integrity & Anti-Tamper Check        ")
     print("===============================================================")
@@ -69,24 +105,62 @@ def verify_evidence(evidence_dir="evidence"):
     manifest_pattern = os.path.join(evidence_dir, "experiments", "**", "manifest.json")
     manifests = sorted(glob.glob(manifest_pattern, recursive=True))
     if not manifests:
-        print(f"Warning: No manifests found in {evidence_dir}/experiments.")
-        return 0
+        if allow_empty:
+            print(f"Notice: No manifests found in {evidence_dir}/experiments (--allow-empty specified).")
+        else:
+            print(f"FATAL: No manifests found in {evidence_dir}/experiments.")
+            print("Failing closed: evidence set must not be empty unless --allow-empty is explicitly passed.")
+            return 1
 
     total_artifacts = 0
     tamper_detected = False
+    manifest_schema_path = os.path.join(schema_dir, "manifest.schema.json")
+    release_schema_path = os.path.join(schema_dir, "release_manifest.schema.json")
 
     for m_path in manifests:
         exp_dir = os.path.dirname(m_path)
         print(f"\nVerifying manifest: {m_path}")
-        with open(m_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        try:
+            with open(m_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception as e:
+            print(f"  [ERROR] Failed to parse manifest JSON: {e}")
+            tamper_detected = True
+            continue
+
+        # Schema validation
+        valid_schema, schema_err = validate_schema(data, manifest_schema_path)
+        if not valid_schema:
+            print(f"  [SCHEMA VIOLATION] {schema_err}")
+            tamper_detected = True
 
         artifacts = data.get("artifacts", [])
+        if not isinstance(artifacts, list):
+            print(f"  [ERROR] 'artifacts' must be a list in {m_path}")
+            tamper_detected = True
+            artifacts = []
 
         for a in artifacts:
+            if not isinstance(a, dict):
+                print(f"  [ERROR] Malformed artifact entry: {a}")
+                tamper_detected = True
+                continue
+
             rel_path = a.get("path")
             expected_hash = a.get("sha256")
-            full_path = os.path.join(exp_dir, rel_path)
+
+            if not rel_path or not expected_hash:
+                print(f"  [ERROR] Artifact missing path or sha256: {a}")
+                tamper_detected = True
+                continue
+
+            # Path traversal guard
+            if not is_safe_relative_path(exp_dir, rel_path):
+                print(f"  [SECURITY] Path traversal detected for artifact path: '{rel_path}'")
+                tamper_detected = True
+                continue
+
+            full_path = os.path.normpath(os.path.join(exp_dir, rel_path))
 
             if not os.path.exists(full_path):
                 print(f"  [ERROR] Artifact missing: {full_path}")
@@ -105,7 +179,7 @@ def verify_evidence(evidence_dir="evidence"):
 
         # Check verifier section
         ver = data.get("verification", {})
-        if ver.get("is_valid", False):
+        if isinstance(ver, dict) and ver.get("is_valid", False):
             # Verify candidate digests
             da = ver.get("digest_a")
             db = ver.get("digest_b")
@@ -114,17 +188,31 @@ def verify_evidence(evidence_dir="evidence"):
                 tamper_detected = True
 
     if tamper_detected:
-        print("\nFATAL: Evidence tampering or missing artifacts detected!")
+        print("\nFATAL: Evidence tampering, schema violation, or missing artifacts detected!")
         return 1
 
     print(f"\nAll {len(manifests)} manifests and {total_artifacts} artifacts verified untampered.")
 
     # Verify release manifest
     rel_manifest_path = os.path.join(evidence_dir, "release_manifest.json")
+    if require_release_manifest and not os.path.exists(rel_manifest_path):
+        print(f"\nFATAL: Required release manifest missing: {rel_manifest_path}")
+        return 1
+
     if os.path.exists(rel_manifest_path):
         print(f"\nVerifying Release Manifest: {rel_manifest_path}")
-        with open(rel_manifest_path, "r", encoding="utf-8") as f:
-            rel_data = json.load(f)
+        try:
+            with open(rel_manifest_path, "r", encoding="utf-8") as f:
+                rel_data = json.load(f)
+        except Exception as e:
+            print(f"  [ERROR] Failed to parse release manifest JSON: {e}")
+            return 1
+
+        # Schema validation
+        valid_schema, schema_err = validate_schema(rel_data, release_schema_path)
+        if not valid_schema:
+            print(f"  [SCHEMA VIOLATION] Release manifest: {schema_err}")
+            return 1
 
         expected_root = compute_evidence_root_hash(evidence_dir)
         actual_root = rel_data.get("root_evidence_hash", "").lower()
@@ -144,5 +232,20 @@ def verify_evidence(evidence_dir="evidence"):
 
     return 0
 
+def main():
+    parser = argparse.ArgumentParser(description="Evidence Integrity & Anti-Tamper Check")
+    parser.add_argument("--evidence-dir", default="evidence", help="Path to evidence directory")
+    parser.add_argument("--schema-dir", default="schemas", help="Path to schemas directory")
+    parser.add_argument("--allow-empty", action="store_true", help="Allow empty manifest directory without failing")
+    parser.add_argument("--require-release-manifest", action="store_true", help="Require release_manifest.json to exist")
+    args = parser.parse_args()
+
+    return verify_evidence(
+        evidence_dir=args.evidence_dir,
+        allow_empty=args.allow_empty,
+        require_release_manifest=args.require_release_manifest,
+        schema_dir=args.schema_dir
+    )
+
 if __name__ == "__main__":
-    sys.exit(verify_evidence())
+    sys.exit(main())

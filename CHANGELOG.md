@@ -2,6 +2,55 @@
 
 All notable changes to the SHA-256 Research Framework will be documented in this file.
 
+## [5.1.0] - 2026-10-20
+
+Hardened stable release candidate bringing 14.5x throughput acceleration to
+context shaping, verified self-healing test automation, strict CLI contracts,
+and comprehensive integrity protection.
+
+### Added
+
+- **Multi-threaded preimage sweep and prefetching (`tools/context_shaping.cpp`)**:
+  `--threads T` partitions contexts across worker threads; `--batch K` issues
+  vectorized hardware prefetches (`_mm_prefetch`). Throughput reaches 1.20e8 swept
+  $a_0$/s on an 8-core CPU (14.5x faster than single-threaded).
+- **Compact table cache format `CST3`**:
+  Eliminated unused bitmap/rank directories to reduce peak resident memory;
+  persists validated fixed-width headers with explicit element counts; rejected
+  corrupted or skewed historical cache files.
+- **Dedicated CTest targets**:
+  Added `context-shaping-table-roundtrip` (writes, reloads, and verifies table
+  consistency against brute force), `context-shaping-multifibre` (measures
+  $\sigma_0/\sigma_1$ sensitivities against exact closed forms), and CLI contract
+  smoke tests (`--version`, `--help`) for all binaries. Total CTest targets: 17.
+- **First-moment spectral analysis tool (`tools/c3_spectrum.cpp`)**:
+  Evaluates the Fourier spectrum of the 20-round residual $c_3$ to detect potential
+  low-frequency modes against computed null hypotheses.
+- **Fail-closed evidence integrity**:
+  `reproducibility/verify_evidence.py` now enforces strict fail-closed policy on
+  missing or empty manifest sets (unless `--allow-empty` is passed), defends
+  against path traversal attacks in artifact paths, and validates schemas with
+  `jsonschema`.
+- **CPack distribution packaging**:
+  Native CMake `install()` targets and CPack configuration generating verified
+  portable archives and package metadata.
+
+### Fixed
+
+- **Legitimate root `0xFFFFFFFF` sentinel collision**:
+  The value `0xFFFFFFFF` is both the "absent" sentinel and a genuine root of
+  image `0x20000000`. Search loops now bound by image multiplicity rather than
+  testing against the sentinel value.
+- **Atomic counter carry hazard**:
+  Replaced plain byte adds with `atomic_add8_sat` (8-bit CAS loop) to prevent
+  accidental carry propagation across adjacent word counters.
+- **Missing CLI `--version` and `--help` support**:
+  All binaries (`sha-research`, `sha-verifier`, `context_shaping`, `c3_spectrum`)
+  now implement standard `--version` and `--help` contracts exiting with code 0.
+- **Release manifest synchronization**:
+  Updated release manifest to version 5.1.0 with verified source commit SHA,
+  accurate test counts, and canonical evidence root hash.
+
 ## [5.0.0] - 2026-10-11
 
 Published as a GitHub release with prebuilt archives for Windows x64, Linux x64

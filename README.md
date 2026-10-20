@@ -1,4 +1,4 @@
-# SHA-256 Cryptanalysis Research Framework (v5.0.0 + unreleased throughput work)
+# SHA-256 Cryptanalysis Research Framework (v5.1.0)
 
 [![Build (Windows MSVC)](https://github.com/timfromhcs/sha256-research-framework/actions/workflows/ci-build.yml/badge.svg?branch=main)](https://github.com/timfromhcs/sha256-research-framework/actions/workflows/ci-build.yml)
 [![Tests (Windows)](https://github.com/timfromhcs/sha256-research-framework/actions/workflows/ci-test.yml/badge.svg?branch=main)](https://github.com/timfromhcs/sha256-research-framework/actions/workflows/ci-test.yml)
@@ -45,24 +45,26 @@ A headless, local-first autonomous research platform for SHA-256 cryptanalysis w
 
 ## Download
 
-**Latest release: [v5.0.0](https://github.com/timfromhcs/sha256-research-framework/releases/tag/v5.0.0)** — Context Shaping, 19-round SHA-256 preimages.
+**Latest release: [v5.1.0](https://github.com/timfromhcs/sha256-research-framework/releases/tag/v5.1.0)** — Throughput Acceleration (14.5x), Hardened Verification, and Release Automation.
 
 Every archive is built on a runner of the matching operating system. No binary in this repository is ever cross-labelled: if a platform cannot be built, the release ships without that asset rather than shipping a mislabelled one.
 
-| Platform | Asset | Size |
-| :--- | :--- | ---: |
-| Windows x64 | `sha256-research-framework-5.0.0-windows-x64.zip` | 263 KiB |
-| Linux x64 | `sha256-research-framework-5.0.0-linux-x64.tar.gz` | 315 KiB |
-| macOS arm64 | `sha256-research-framework-5.0.0-macos-arm64.tar.gz` | 217 KiB |
+| Platform | Asset | Description |
+| :--- | :--- | :--- |
+| Windows x64 | `sha256-research-framework-5.1.0-windows-x64.zip` | Native Windows x64 binaries, docs, tools |
+| Linux x64 | `sha256-research-framework-5.1.0-linux-x64.tar.gz` | Native Linux x64 binaries, docs, tools |
+| macOS arm64 | `sha256-research-framework-5.1.0-macos-arm64.tar.gz` | Apple Silicon arm64 binaries, docs, tools |
 
 Each asset ships with a `.sha256` digest file. Verify before use:
 
 ```bash
-sha256sum -c sha256-research-framework-5.0.0-<platform>.<archive>.sha256
+sha256sum -c sha256-research-framework-5.1.0-<platform>.<archive>.sha256
 
 # then check the binaries themselves
 bin/sha-verifier test-vectors        # NIST known-answer vectors
+bin/sha-verifier --version           # CLI version contract
 bin/context_shaping selftest         # all ten algebraic identities
+bin/context_shaping --version        # CLI version contract
 ```
 
 Builds are CPU-only; the Vulkan SDK is optional and is not present on the
@@ -73,7 +75,7 @@ bottom of the release page.
 
 | Version | Headline |
 | :--- | :--- |
-| **unreleased** (`main`) | Threaded + prefetched search (**14.5x**), three correctness fixes incl. a corrupt table cache |
+| **v5.1.0** | Threaded + prefetched search (**14.5x**), CST3 table format, fail-closed verification, CLI contracts |
 | **v5.0.0** | Context shaping: this framework **solves 19 rounds**; 20 and 21 documented as out of reach |
 | v4.3.0 | External witness verification (8/8, up to 20 rounds) + Z3 cross-check |
 | v4.2.0 | Dobbertin state constraints — measured as a regression, reported as such |

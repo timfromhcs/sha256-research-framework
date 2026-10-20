@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag to build and publish (e.g. v5.0.0)'
+        description: 'Tag to build and publish (e.g. v5.1.0)'
         required: true
         type: string
   push:
@@ -21,7 +21,7 @@ on:
       - 'v*'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   package:
@@ -43,22 +43,21 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Read the version to stamp into asset names
         id: ver
         shell: bash
         run: |
-          # On a tag push GITHUB_REF_NAME is the tag, but under
-          # workflow_dispatch it is the *branch*, which previously stamped
-          # "main" into every published filename.
           TAG="${{ inputs.tag || github.ref_name }}"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
           echo "building $TAG (version ${TAG#v})"
 
       - name: Set up CMake
-        uses: jwlawson/actions-setup-cmake@v2
+        uses: jwlawson/actions-setup-cmake@8be2c3a516086ea7ecf92cf08129e96e85038f8f
         with:
           cmakeVersion: '3.28'
 
@@ -72,7 +71,7 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
-        run: cmake --build build --config Release --target sha-research sha-verifier context_shaping
+        run: cmake --build build --config Release --target sha-research sha-verifier context_shaping c3_spectrum
 
       - name: Smoke test the binaries that were just built
         shell: bash
@@ -80,32 +79,38 @@ jobs:
           set -euo pipefail
           if [ "$RUNNER_OS" = "Windows" ]; then
             BIN=build/Release
+            EXE=.exe
           else
             BIN=build
+            EXE=
           fi
-          "$BIN/sha-verifier" test-vectors
-          "$BIN/context_shaping" selftest
+          "$BIN/sha-research$EXE" --version
+          "$BIN/sha-verifier$EXE" --version
+          "$BIN/sha-verifier$EXE" test-vectors
+          "$BIN/context_shaping$EXE" --version
+          "$BIN/context_shaping$EXE" selftest
+          "$BIN/c3_spectrum$EXE" --version
 
       - name: Stage the package
         id: stage
         shell: bash
         run: |
           set -euo pipefail
-          if [ "$RUNNER_OS" = "Windows" ]; then BIN=build/Release; else BIN=build; fi
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            BIN=build/Release
+            EXE=.exe
+          else
+            BIN=build
+            EXE=
+          fi
           PKG="sha256-research-framework-${{ steps.ver.outputs.version }}-${{ matrix.label }}"
           mkdir -p "$PKG/bin" "$PKG/tools" "$PKG/docs"
-          cp "$BIN/sha-research" "$BIN/sha-verifier" "$BIN/context_shaping" "$PKG/bin/"
+          cp "$BIN/sha-research$EXE" "$BIN/sha-verifier$EXE" "$BIN/context_shaping$EXE" "$BIN/c3_spectrum$EXE" "$PKG/bin/"
           cp LICENSE README.md CHANGELOG.md CONTRIBUTING.md SECURITY.md "$PKG/"
           cp tools/verify_published.py tools/z3_bitvector_check.py "$PKG/tools/"
-          cp docs/research/advanced-strategies.md \
-             docs/research/verification.md \
-             docs/research/terminology.md "$PKG/docs/"
+          cp -r docs/* "$PKG/docs/"
           echo "name=$PKG" >> "$GITHUB_OUTPUT"
 
-      # Archiving is split per platform on purpose. Three earlier bugs lived in
-      # a single cross-platform step: Windows runners have no `zip`, macOS
-      # ships `shasum` rather than `sha256sum`, and a step cannot read its own
-      # `steps.<id>.outputs` while producing them.
       - name: Archive (Windows)
         if: runner.os == 'Windows'
         id: archive_win
@@ -141,7 +146,7 @@ jobs:
 
       - name: Upload build artifact (Windows)
         if: runner.os == 'Windows'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1
         with:
           name: ${{ steps.stage.outputs.name }}
           path: |
@@ -151,7 +156,7 @@ jobs:
 
       - name: Upload build artifact (Linux / macOS)
         if: runner.os != 'Windows'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1
         with:
           name: ${{ steps.stage.outputs.name }}
           path: |
@@ -167,10 +172,12 @@ jobs:
       contents: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Download all built archives
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16
         with:
           path: assets
           merge-multiple: true
@@ -188,7 +195,7 @@ jobs:
             gh release upload "$TAG" assets/* --clobber
           else
             gh release create "$TAG" assets/* \
-              --title "v5.0.0 -- Context Shaping: 19-Round SHA-256 Preimages" \
+              --title "$TAG -- SHA-256 Research Framework" \
               --notes-file RELEASE_NOTES.md \
               --latest
           fi

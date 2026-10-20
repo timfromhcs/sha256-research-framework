@@ -54,6 +54,10 @@ from sha256_research_platform.agent import (
     ToolRegistry, ToolValidationError, AutonomousResearchCampaign,
     TrustLevel, EpistemicTrustManager, EpistemicIntegrityError
 )
+
+_v3_test_temp_db = os.path.join(tempfile.gettempdir(), f"v3_test_kb_{os.getpid()}.sqlite")
+os.environ.setdefault("SHA256_DB_PATH", _v3_test_temp_db)
+
 from sha256_research_platform.api.app import app
 
 

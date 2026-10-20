@@ -46,6 +46,8 @@ jobs:
           if (-not (Test-Path "$binDir\sha_adversarial_tests.exe")) { throw "sha_adversarial_tests.exe missing" }
           if (-not (Test-Path "$binDir\test_million_a.exe")) { throw "test_million_a.exe missing" }
           if (-not (Test-Path "$binDir\test_determinism.exe")) { throw "test_determinism.exe missing" }
+          if (-not (Test-Path "$binDir\context_shaping.exe")) { throw "context_shaping.exe missing" }
+          if (-not (Test-Path "$binDir\c3_spectrum.exe")) { throw "c3_spectrum.exe missing" }
           Write-Host "All binaries verified in $binDir."
 
   build-windows-cpuonly:
@@ -72,3 +74,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "CPU-only tests failed" }
           & "$binDir\sha_adversarial_tests.exe"
           if ($LASTEXITCODE -ne 0) { throw "CPU-only adversarial tests failed" }
+          & "$binDir\context_shaping.exe" selftest
+          if ($LASTEXITCODE -ne 0) { throw "CPU-only context_shaping selftest failed" }
+          & "$binDir\context_shaping.exe" multifibre
+          if ($LASTEXITCODE -ne 0) { throw "CPU-only context_shaping multifibre failed" }

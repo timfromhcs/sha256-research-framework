@@ -70,6 +70,23 @@ static inline uint32_t atomic_add32(uint32_t* p, uint32_t v) {
 static inline uint32_t atomic_add16(uint16_t* p) {
     return (uint32_t)_InterlockedExchangeAdd16((volatile short*)p, 1);
 }
+// Saturating byte-wise add. A plain byte add is not atomic (it can carry into
+// the neighbouring counter, which is exactly how an earlier revision lost most
+// of its counts), so this spins a CAS loop instead and clamps at 255.
+//
+// The CAS must be genuinely 8-bit. Reading the byte through a 32-bit
+// InterlockedCompareExchange is wrong: two counters share one aligned word, so
+// a 32-bit CAS on one byte either always fails or clobbers its neighbour. The
+// first version of this helper did that and silently lost roughly 40% of all
+// counts -- visible only as a multiplicity mismatch against brute force.
+static inline void atomic_add8_sat(uint8_t* p) {
+    volatile char* q = (volatile char*)p;
+    for (;;) {
+        char old = (char)_InterlockedCompareExchange8(q, 0, 0);
+        if ((unsigned char)old >= 255) return;                 // saturate
+        if ((char)_InterlockedCompareExchange8(q, (char)(old + 1), old) == old) return;
+    }
+}
 #else
 static inline int popcnt64(uint64_t x) { return __builtin_popcountll(x); }
 static inline uint64_t atomic_or64(uint64_t* p, uint64_t v) {
@@ -80,6 +97,14 @@ static inline uint32_t atomic_add32(uint32_t* p, uint32_t v) {
 }
 static inline uint32_t atomic_add16(uint16_t* p) {
     return __atomic_fetch_add(p, (uint16_t)1, __ATOMIC_RELAXED);
+}
+static inline void atomic_add8_sat(uint8_t* p) {
+    uint8_t old = __atomic_load_n(p, __ATOMIC_RELAXED);
+    while (old < 255) {
+        if (__atomic_compare_exchange_n(p, &old, (uint8_t)(old + 1), false,
+                                        __ATOMIC_RELAXED, __ATOMIC_RELAXED))
+            return;
+    }
 }
 #endif
 static inline uint32_t popcnt32_w(uint32_t x) {
@@ -231,46 +256,30 @@ static const uint64_t MAX_TABLE_BYTES = 6ull << 30;  // 6 GiB
 // full mean of 1.5781 roots per attained image -- 2.5x better per byte than
 // dense K=1 and 6.5x better than dense K=3.
 //
-// Layout: a bitmap marking attained images, a rank directory over it, one
-// byte of multiplicity per image, and one contiguous array of roots grouped by
-// image in increasing image order (ascending u within each image).
+// Layout: one byte of multiplicity per image, a sampled root-base array, and
+// one contiguous array of roots grouped by image in increasing image order
+// (ascending u within each image).
+//
+// An earlier revision also carried a bitmap of attained images and a rank
+// directory over it, so that a rank() query would be O(1). Nothing ever called
+// it: multiplicity() reads the byte array and root() reads the root-base array.
+// The two structures cost 0.1875 bytes per image and were pure weight on a
+// build whose peak is what decides the usable table width.
 struct CompactInverseTable {
     uint32_t bits = 0;
     uint32_t range = 0;             // images kept are < range
-    std::vector<uint64_t> bitmap;   // range/64 words
-    std::vector<uint32_t> rankdir;  // prefix popcount every 512 images
     std::vector<uint8_t> cnt;       // multiplicity per image, 0 = not attained
-    std::vector<uint32_t> roots;    // all roots, grouped by image
     uint64_t stored = 0;
     uint64_t attained = 0;
 
-    static const uint64_t RB = 64;   // rank directory block, in images
-
-    inline bool is_set(uint32_t i) const {
-        return (bitmap[i >> 6] >> (i & 63)) & 1ull;
-    }
-    // Number of attained images strictly below i.
-    // Number of attained images strictly below i. With a 64-image block this
-    // is a single masked popcount on top of the directory lookup.
-    inline uint32_t rank_before(uint32_t i) const {
-        const uint32_t block = i / (uint32_t)RB;
-        uint32_t r = rankdir[block];
-        const uint32_t wsel = i / 64u;
-        const uint32_t wStart = block * (uint32_t)(RB / 64u);
-        for (uint32_t k = wStart; k < wsel; ++k) r += (uint32_t)popcnt64(bitmap[k]);
-        if (wsel < bitmap.size()) {
-            const uint32_t b = i & 63u;
-            r += (uint32_t)popcnt64(bitmap[wsel] & ((b == 0) ? 0ull : (~0ull >> (63u - b))));
-        }
-        return r;
-    }
+    static const uint32_t RB2 = 8;  // root-base block, in images
 
 // Physical memory actually available right now.
 //
 // A fixed ceiling is not an OOM guard: the guard has to know what the machine
 // has. The compact table's resident cost is about 6.16 bytes per image across
 // its phases (cnt16 2, cnt 1, rootbase 0.5, bitmap 0.125, roots 2.535), so a
-// width of 2^31 needs ~13 GiB and 2^30 needs ~6.6 GiB. Reading the real
+// width of 2^31 needs ~10.8 GiB and 2^30 needs ~5.4 GiB. Reading the real
 // figure at build time is what lets the tool pick the widest table it can
 // actually hold instead of guessing.
 static uint64_t available_memory_bytes() {
@@ -307,14 +316,23 @@ struct MemoryBudget {
 };
 
 // The compact table's peak bytes per image across all construction phases.
-static const uint64_t PEAK_BYTES_PER_IMAGE_NUM = 63;   // /10: 6.3 to be safe
-static const uint64_t PEAK_BYTES_PER_IMAGE_DEN = 10;
-
-// The compact table's peak bytes per image across all construction phases,
-// budgeted against memory the machine actually reports. The cnt16 and cnt
-// arrays coexist only briefly; the binding constraint is roots, which is
-// resident for the whole run.
-static const uint64_t PEAK_BYTES_PER_IMAGE = 7168ull / 1024ull;  // 7.0
+//
+// The peak is set while `cnt`, `filled`, `rootbase` and `roots` are all live at
+// once. Per image that is:
+//
+//   cnt      1.000   (immutable multiplicity, one byte per image)
+//   filled   1.000   (placement cursor, one byte per image, freed after build)
+//   rootbase 0.500   (one uint32 per RB2=8 images)
+//   roots    2.535   (0.633673 attained x 1.5781 roots/image x 4 bytes)
+//                  -------
+//                   5.035
+//
+// The first revision of this layout also carried a uint16 counting array and a
+// bitmap, costing 7.0 bytes per image. Both are gone: the counting array was
+// replaced by an atomic increment directly into `cnt`, and the bitmap was dead
+// weight that nothing ever read. That 1.965-byte saving is what lets width
+// 2^31 (~10.8 GiB) be built on a machine with ~13 GiB free.
+static const uint64_t PEAK_BYTES_PER_IMAGE = 5035ull / 1000ull;
 void build(uint32_t b) {
         const uint64_t peak_per_bit = PEAK_BYTES_PER_IMAGE;
         MemoryBudget mem;
@@ -330,17 +348,22 @@ void build(uint32_t b) {
         range = (b >= 32) ? 0 : (1u << b);   // 0 means the full 2^32 space
         uint32_t N = (b >= 32) ? 0xFFFFFFFFu : ((1u << b) - 1u);
 
-        bitmap.assign(((size_t)N + 64) / 64, 0ull);
         rootbase.assign(((size_t)N / RB2) + 2u, 0u);
 
-        uint16_t* cnt16 = new uint16_t[(size_t)N + 1u]();
+        // The counting array is `cnt` itself, one byte per image, rather than a
+        // separate uint16 scratch. Two u values can land on the same image, so
+        // the increments have to be atomic, and a byte-wise increment is not:
+        // it can carry into the neighbouring counter. A saturating CAS loop is
+        // both correct and atomic. Saturation is safe because the measured
+        // maximum fibre of u -> sg0(u) - u is 14, far below 255; `build()`
+        // verifies that bound still holds and reports it rather than assuming.
+        std::atomic<uint8_t> sat{0};
+        cnt.assign((size_t)N + 1u, 0);
 
         const unsigned T = std::max(1u, std::thread::hardware_concurrency());
 
-        // Pass A: multiplicity per image, as a 16-bit atomic add. Several u map
-        // to the same image and they land in different thread chunks, so a
-        // plain ++ loses updates. (A byte-wise atomic add was tried first and
-        // corrupted neighbouring counters, losing most of the counts.)
+        // Pass A: multiplicity per image. Several u map to the same image and
+        // they land in different thread chunks, so a plain ++ loses updates.
         std::vector<std::thread> th;
         for (unsigned t = 0; t < T; ++t) {
             th.emplace_back([&, t]() {
@@ -352,39 +375,33 @@ void build(uint32_t b) {
                     for (uint64_t u = base; u < end; ++u) {
                         uint32_t uv = (uint32_t)u;
                         uint32_t img = sg0(uv) - uv;
-                        if (img <= N) atomic_add16(&cnt16[img]);
+                        if (img <= N) {
+                            const uint8_t before = cnt[img];
+                            atomic_add8_sat(&cnt[img]);
+                            if (before == 255) sat.store(1, std::memory_order_relaxed);
+                        }
                     }
                 }
             });
         }
         for (auto& x : th) x.join();
 
-        // Rank directory and bitmap, so rank_before() is O(1).
-        rankdir.assign(((size_t)N / (uint32_t)RB) + 2u, 0u);
+        if (sat.load(std::memory_order_relaxed)) {
+            fprintf(stderr, "image fibre exceeded 255; the compact layout cannot "
+                            "represent it. Rebuild at a lower width.\n");
+            return;
+        }
+
+        // Prefix counts over the immutable multiplicity array.
         uint64_t total = 0;
         uint32_t running = 0;
-        for (uint32_t blk = 0; (uint64_t)blk * RB <= N; ++blk) {
-            rankdir[blk] = running;
-            uint32_t start = blk * (uint32_t)RB;
-            uint32_t stop = std::min<uint32_t>(start + (uint32_t)RB, N + 1u);
-            for (uint32_t i = start; i < stop; ++i) {
-                uint32_t c = cnt16[i];
-                if (c) { bitmap[i >> 6] |= 1ull << (i & 63); ++running; total += c; }
-            }
+        for (uint32_t i = 0; i <= N; ++i) {
+            const uint32_t c = cnt[i];
+            if (c) { ++running; total += c; }
         }
         attained = running;
         stored = total;
-        if (total > 0xFFFFFFFEull) { delete[] cnt16; return; }   // needs 32-bit slots
-
-        // Freeze the multiplicities into the compact uint8 array *before*
-        // placement. Placement decrements cnt16 as it fills each image, so any
-        // base lookup that read cnt16 would see a shrinking target and write
-        // past the end of the image's block -- which is exactly the access
-        // violation an earlier revision took. `cnt` is the immutable copy the
-        // base lookup must read.
-        cnt.assign((size_t)N + 1u, 0);
-        for (uint32_t i = 0; i <= N; ++i)
-            if (cnt16[i]) cnt[i] = (uint8_t)(cnt16[i] > 255 ? 255 : cnt16[i]);
+        if (total > 0xFFFFFFFEull) { return; }   // needs 32-bit slots
 
         // Pass B: place roots. The cursor is NOT materialised.
         //
@@ -398,9 +415,8 @@ void build(uint32_t b) {
         //   base(i) = rootbase[i/8] + sum of cnt[j] for j in [8*floor(i/8), i)
         //
         // one 32-bit load plus at most seven byte loads. That trades a
-        // 4-byte-per-image array for a 0.5-byte-per-image one, cutting the
-        // build peak from ~9 bytes per image to ~6, which is what makes width
-        // 2^31 fit in RAM at all.
+        // 4-byte-per-image array for a 0.5-byte-per-image one, which is what
+        // makes width 2^31 fit in RAM at all.
         {
             uint32_t rr = 0;
             for (uint32_t blk = 0; (uint64_t)blk * RB2 <= N; ++blk) {
@@ -413,45 +429,55 @@ void build(uint32_t b) {
             if (rr != total) {
                 fprintf(stderr, "internal error: weighted rank %llu != total %llu\n",
                         (unsigned long long)rr, (unsigned long long)total);
-                delete[] cnt16;
                 return;
             }
         }
         roots.assign((size_t)total, 0u);
 
+        // Placement walks u in increasing order and fills each image's block
+        // from the front. The per-image write offset comes from a one-byte
+        // `filled` cursor that lives only for this pass, so the multiplicity
+        // array itself stays immutable and no uint16 copy of it is needed.
+        std::vector<uint8_t> filled((size_t)N + 1u, 0);
         for (uint64_t u = 0; u < 0x100000000ull; ++u) {
             uint32_t uv = (uint32_t)u;
             uint32_t img = sg0(uv) - uv;
             if (img > N) continue;
-            uint16_t c = cnt16[img];
+            const uint32_t c = cnt[img];
             if (!c) continue;
             const uint32_t blk = img / RB2;
             uint32_t base = rootbase[blk];
             for (uint32_t j = blk * RB2; j < img; ++j) base += cnt[j];
-            roots[base + (c - 1)] = uv;
-            --cnt16[img];
+            uint8_t& f = filled[img];
+            if (f >= c) continue;               // already full
+            roots[base + f] = uv;
+            ++f;
         }
 
         // Steady-state layout: one byte of multiplicity per image, a sampled
         // root-base array, and the roots themselves.
-        delete[] cnt16;
     }
 
     // Base slot of each image, sampled every RB2 images. A full per-image
     // offset array would cost 4 bytes per image -- exactly what the dense
-    // table already spends, which would erase the saving. rank_before() also
-    // does not work here: it counts attained *images*, whereas slots are
-    // indexed by *roots*.
-    static const uint32_t RB2 = 8;
+    // table already spends, which would erase the saving. A prefix count over
+    // the bitmap does not work here either: that counts attained *images*,
+    // whereas slots are indexed by *roots*.
     std::vector<uint32_t> rootbase;   // (2^B / RB2) + 1 entries
+    std::vector<uint32_t> roots;      // all roots, grouped by image
 
     inline uint32_t multiplicity(uint32_t image) const {
         if (range && image >= range) return 0;
         return cnt[image];
     }
     // The k-th root of `image`, or 0xFFFFFFFF when absent. Within an image the
-    // order is arbitrary: threads claim slots with an atomic cursor, and every
-    // claimed slot is a genuine root, which is all the search needs.
+    // order is ascending in u, and every stored slot is a genuine root, which is
+    // all the search needs.
+    //
+    // 0xFFFFFFFF is a legitimate stored value -- u = 0xFFFFFFFF maps to image
+    // 0x20000000 -- and is also the "no such slot" sentinel. Callers must
+    // therefore bound their loop by multiplicity() and never test this result
+    // against the sentinel, or they will silently drop a real branch.
     inline uint32_t root(uint32_t image, uint32_t k) const {
         const uint32_t m = multiplicity(image);
         if (k >= m) return 0xFFFFFFFFu;
@@ -559,11 +585,12 @@ struct MappedTable {
 // reported plausible statistics, and returned roots that were not roots of
 // anything. Nothing checked it, because nothing checked a cached table.
 static const size_t TABLE_HDR_BYTES = 64;
-static const uint32_t TABLE_MAGIC = 0x43535432u;   // 'CST2'
+static const uint32_t TABLE_MAGIC = 0x43535433u;   // 'CST3'
 
 // Serialise the live arrays into one file so a later run can map them in place.
+// The layout is fixed-width and the header records every array length, so the
+// reader can size its buffers without trusting anything in the payload.
 static bool save_table(const CompactInverseTable& t, const char* path) {
-    const uint32_t nwords_bitmap = (uint32_t)t.bitmap.size();
     const uint32_t nwords_rootbase = (uint32_t)t.rootbase.size();
     const uint32_t nbytes_cnt = (uint32_t)t.cnt.size();
     const uint32_t nroots = (uint32_t)t.roots.size();
@@ -574,7 +601,7 @@ static bool save_table(const CompactInverseTable& t, const char* path) {
     uint32_t hdr[16];
     memset(hdr, 0, sizeof(hdr));
     hdr[0] = t.bits;
-    hdr[1] = nwords_bitmap;
+    hdr[1] = 0;                              // reserved (was the bitmap)
     hdr[2] = nwords_rootbase;
     hdr[3] = nbytes_cnt;
     hdr[4] = (uint32_t)(stored & 0xFFFFFFFFu);
@@ -583,7 +610,6 @@ static bool save_table(const CompactInverseTable& t, const char* path) {
     hdr[7] = nroots;
     hdr[15] = TABLE_MAGIC;
     bool ok = fwrite(hdr, 1, TABLE_HDR_BYTES, fh) == TABLE_HDR_BYTES;
-    ok = ok && fwrite(t.bitmap.data(), 1, t.bitmap.size() * 8, fh) == t.bitmap.size() * 8;
     ok = ok && fwrite(t.rootbase.data(), 1, t.rootbase.size() * 4, fh) == t.rootbase.size() * 4;
     ok = ok && fwrite(t.cnt.data(), 1, t.cnt.size(), fh) == t.cnt.size();
     ok = ok && fwrite(t.roots.data(), 1, t.roots.size() * 4, fh) == t.roots.size() * 4;
@@ -607,18 +633,16 @@ static bool load_table(CompactInverseTable& t, const char* path) {
     }
     t.bits = hdr[0];
     t.range = (t.bits >= 32) ? 0 : (1u << t.bits);
-    t.bitmap.assign(hdr[1], 0ull);
     t.rootbase.assign(hdr[2], 0u);
     t.cnt.assign(hdr[3], 0);
     t.stored = (uint64_t)hdr[4] | ((uint64_t)hdr[5] << 32);
     t.attained = hdr[6];
 
     MappedTable map;
-    const size_t payload = (size_t)t.bitmap.size() * 8 + (size_t)t.rootbase.size() * 4
-                         + (size_t)t.cnt.size() + (size_t)hdr[7] * 4;
+    const size_t payload = (size_t)t.rootbase.size() * 4 + (size_t)t.cnt.size()
+                         + (size_t)hdr[7] * 4;
     if (!map.open(path, TABLE_HDR_BYTES + payload, false)) { fclose(fh); return false; }
     char* p = (char*)map.base + TABLE_HDR_BYTES;
-    memcpy(t.bitmap.data(), p, t.bitmap.size() * 8); p += t.bitmap.size() * 8;
     memcpy(t.rootbase.data(), p, t.rootbase.size() * 4); p += t.rootbase.size() * 4;
     memcpy(t.cnt.data(), p, t.cnt.size()); p += t.cnt.size();
     t.roots.assign((size_t)t.stored, 0u);
@@ -966,17 +990,47 @@ static FILE* open_c3_stream() {
     return fh;
 }
 
+#ifndef SHA256_RESEARCH_VERSION
+#define SHA256_RESEARCH_VERSION "5.1.0"
+#endif
+
 int main(int argc, char** argv) {
     if (const char* b = getenv("CS_FIBRE_BITS")) BITS = (uint32_t)strtoul(b, nullptr, 10);
+    if (argc >= 2) {
+        const char* arg1 = argv[1];
+        if (std::strcmp(arg1, "--version") == 0 || std::strcmp(arg1, "-v") == 0 || std::strcmp(arg1, "version") == 0) {
+            printf("context_shaping %s\n", SHA256_RESEARCH_VERSION);
+            return 0;
+        }
+        if (std::strcmp(arg1, "--help") == 0 || std::strcmp(arg1, "-h") == 0 || std::strcmp(arg1, "help") == 0) {
+            printf("context_shaping %s -- reduced-round SHA-256 preimage search\n\n", SHA256_RESEARCH_VERSION);
+            printf("  selftest                     backward-chain round trip\n");
+            printf("  multifibre                   measure sigma0/sigma1 sensitivities\n");
+            printf("  tabletest                    verify compact inverse table\n");
+            printf("  analyze <block> <target>     recover state, test family membership\n");
+            printf("  search <target> [options]    search for new preimages\n");
+            printf("      --bits B      table covers image values < 2^B (default 30)\n");
+            printf("      --contexts N  number of contexts to try (default 64)\n");
+            printf("      --sweep M     swept a0 values per context (default 1<<21)\n");
+            printf("      --seed S      context seed (default 1)\n");
+            printf("      --threads T   number of search threads (default 1)\n");
+            printf("      --batch K     pre-fetch batch size (default 1)\n");
+            return 0;
+        }
+    }
     if (argc < 2) {
-        printf("context_shaping -- reduced-round SHA-256 preimage search\n\n");
+        printf("context_shaping %s -- reduced-round SHA-256 preimage search\n\n", SHA256_RESEARCH_VERSION);
         printf("  selftest                     backward-chain round trip\n");
+        printf("  multifibre                   measure sigma0/sigma1 sensitivities\n");
+        printf("  tabletest                    verify compact inverse table\n");
         printf("  analyze <block> <target>     recover state, test family membership\n");
         printf("  search <target> [options]    search for new preimages\n");
         printf("      --bits B      table covers image values < 2^B (default 30)\n");
         printf("      --contexts N  number of contexts to try (default 64)\n");
         printf("      --sweep M     swept a0 values per context (default 1<<21)\n");
         printf("      --seed S      context seed (default 1)\n");
+        printf("      --threads T   number of search threads (default 1)\n");
+        printf("      --batch K     pre-fetch batch size (default 1)\n");
         return 0;
     }
 

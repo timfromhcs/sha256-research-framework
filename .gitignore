@@ -3,6 +3,9 @@ build/
 build-*/
 build_*/
 Testing/
+_CPack_Packages/
+*.zip
+*.tar.gz
 bin/
 lib/
 out/
@@ -30,6 +33,7 @@ evidence/cycles/
 evidence/*/cycles/
 *.sqlite
 *.sqlite-journal
+*.db
 
 # Python
 __pycache__/

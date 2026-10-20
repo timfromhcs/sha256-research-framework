@@ -56,3 +56,12 @@ jobs:
           $binDir = if (Test-Path build\Release) { "build\Release" } else { "build" }
           & "$binDir\sha_adversarial_tests.exe"
           if ($LASTEXITCODE -ne 0) { throw "sha_adversarial_tests failed with exit code $LASTEXITCODE" }
+
+      - name: Verify CLI Version & Help Contract
+        shell: pwsh
+        run: |
+          $binDir = if (Test-Path build\Release) { "build\Release" } else { "build" }
+          & "$binDir\sha-verifier.exe" --version
+          if ($LASTEXITCODE -ne 0) { throw "sha-verifier --version failed" }
+          & "$binDir\sha-verifier.exe" --help
+          if ($LASTEXITCODE -ne 0) { throw "sha-verifier --help failed" }

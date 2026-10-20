@@ -25,7 +25,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install starlette uvicorn psutil
+          pip install starlette uvicorn psutil z3-solver pytest jsonschema
 
       - name: Setup MSVC environment
         uses: ilammy/msvc-dev-cmd@a102174a2b586eec2ea151a69e6fd14404a8ce7c
@@ -43,22 +43,14 @@ jobs:
       - name: Configure CMake
         run: cmake -B build
 
-      - name: Build Test Targets
-        run: cmake --build build --config Release --target sha_tests test_million_a test_determinism
+      - name: Build All Targets (Release)
+        run: cmake --build build --config Release --parallel 4
 
-      - name: Execute Full Test Suite
+      - name: Run CTest Suite
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Execute Full Python Test Suite
         shell: pwsh
         run: |
-          $binDir = if (Test-Path build\Release) { "build\Release" } else { "build" }
-          & "$binDir\sha_tests.exe"
-          if ($LASTEXITCODE -ne 0) { throw "sha_tests failed with exit code $LASTEXITCODE" }
-          & "$binDir\test_million_a.exe"
-          if ($LASTEXITCODE -ne 0) { throw "test_million_a failed with exit code $LASTEXITCODE" }
-          & "$binDir\test_determinism.exe"
-          if ($LASTEXITCODE -ne 0) { throw "test_determinism failed with exit code $LASTEXITCODE" }
-
-      - name: Execute v3 Headless Platform Tests
-        shell: pwsh
-        run: |
-          python tests/test_v3_platform.py
-          if ($LASTEXITCODE -ne 0) { throw "test_v3_platform failed with exit code $LASTEXITCODE" }
+          python -m pytest tests/
+          if ($LASTEXITCODE -ne 0) { throw "pytest test suite failed with exit code $LASTEXITCODE" }

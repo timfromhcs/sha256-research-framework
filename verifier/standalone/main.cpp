@@ -9,9 +9,13 @@
 
 using namespace sha256_research;
 
+#ifndef SHA256_RESEARCH_VERSION
+#define SHA256_RESEARCH_VERSION "5.1.0"
+#endif
+
 void print_verifier_banner() {
     std::cout << "===============================================================\n"
-              << "       INDEPENDENT SHA-256 INTEGRITY & VERIFICATION GATE       \n"
+              << "   INDEPENDENT SHA-256 INTEGRITY & VERIFICATION GATE (v" << SHA256_RESEARCH_VERSION << ") \n"
               << "===============================================================\n";
 }
 
@@ -101,6 +105,27 @@ int main(int argc, char* argv[]) {
     }
 
     std::string cmd = argv[1];
+
+    if (cmd == "--version" || cmd == "-v" || cmd == "version") {
+        std::cout << "sha-verifier " << SHA256_RESEARCH_VERSION << "\n";
+        return 0;
+    }
+
+    if (cmd == "--help" || cmd == "-h" || cmd == "help") {
+        print_verifier_banner();
+        std::cout << "Usage: sha-verifier <command> [args...]\n\n"
+                  << "Commands:\n"
+                  << "  test-vectors           Verify standard NIST FIPS 180-4 test vectors\n"
+                  << "  test-negative          Execute hostile anti-cheating rejection tests\n"
+                  << "  verify-pair <m1> <m2> [rounds] [--json]  Verify collision candidate from two hex strings\n"
+                  << "  verify-preimage <m> <t> [rounds] [--json] Verify preimage candidate against target digest\n"
+                  << "  tamper-check <file>    Verify SHA-256 digest of specified evidence file\n\n"
+                  << "Global options:\n"
+                  << "  --json                 Emit the verdict as a single-line JSON object on stdout.\n"
+                  << "                         Machine-readable contract for the Python platform; exit\n"
+                  << "                         code 0 = valid, 1 = invalid.\n";
+        return 0;
+    }
 
     if (cmd == "test-vectors") {
         std::cout << "[Verifier] Running NIST FIPS 180-4 Known-Answer Tests...\n";

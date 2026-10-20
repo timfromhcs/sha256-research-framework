@@ -38,6 +38,9 @@ jobs:
           grep -q "@timfromhcs" .github/CODEOWNERS || { echo "Owner @timfromhcs missing in CODEOWNERS"; exit 1; }
           echo "CODEOWNERS verified."
 
-      - name: Verify JSON Schemas
+      - name: Install jsonschema validator
+        run: pip install jsonschema
+
+      - name: Verify JSON Schemas & Contracts
         run: |
-          python -c "import json; json.load(open('schemas/manifest.schema.json')); json.load(open('schemas/claim.schema.json')); json.load(open('schemas/release_manifest.schema.json')); print('Schemas valid.')"
+          python -c "import json, jsonschema; [jsonschema.Draft7Validator.check_schema(json.load(open(f))) for f in ['schemas/manifest.schema.json', 'schemas/claim.schema.json', 'schemas/release_manifest.schema.json']]; jsonschema.validate(json.load(open('evidence/release_manifest.json')), json.load(open('schemas/release_manifest.schema.json'))); print('Schemas and release manifest fully compliant.')"

@@ -36,6 +36,10 @@
 #include <vector>
 #include <algorithm>
 
+#ifndef SHA256_RESEARCH_VERSION
+#define SHA256_RESEARCH_VERSION "5.1.0"
+#endif
+
 // Sample c3 values from a stream of little-endian uint32.
 static bool read_samples(const char* path, std::vector<uint32_t>& out, uint64_t cap) {
     FILE* fh = fopen(path, "rb");
@@ -48,6 +52,21 @@ static bool read_samples(const char* path, std::vector<uint32_t>& out, uint64_t 
 }
 
 int main(int argc, char** argv) {
+    if (argc >= 2) {
+        std::string arg1(argv[1]);
+        if (arg1 == "--version" || arg1 == "-v" || arg1 == "version") {
+            printf("c3_spectrum %s\n", SHA256_RESEARCH_VERSION);
+            return 0;
+        }
+        if (arg1 == "--help" || arg1 == "-h" || arg1 == "help") {
+            printf("c3_spectrum %s -- first-moment spectral test for the 20-round residual c3\n\n", SHA256_RESEARCH_VERSION);
+            printf("usage: c3_spectrum --in <c3.bin> [--freqs F] [--cap N]\n\n");
+            printf("Produce <c3.bin> with:\n");
+            printf("  CS_C3_OUT=c3.bin CS_MEASURE_C1=1 context_shaping search <target> \\\n");
+            printf("      --rounds 20 --bits 30 --contexts C --sweep S\n\n");
+            return 0;
+        }
+    }
     const char* path = nullptr;
     uint64_t freq_budget = 4096;
     uint64_t cap = 2000000000;

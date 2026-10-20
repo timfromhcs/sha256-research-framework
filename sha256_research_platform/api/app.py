@@ -51,7 +51,8 @@ from ..agent.loop import AutonomousResearchCampaign
 from ..agent.trust import TrustLevel, EpistemicIntegrityError
 
 # Global platform instances
-db = DatabaseManager()
+db_path = os.getenv("SHA256_DB_PATH", "evidence/knowledge_base.sqlite")
+db = DatabaseManager(db_path=db_path)
 runtime = LocalModelRuntime(db)
 worker_pool = ResearchWorkerPool(db)
 worker_pool.start()

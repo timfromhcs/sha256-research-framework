@@ -22,8 +22,12 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install dependencies
+        run: pip install pytest jsonschema
+
       - name: Run Evidence Manifest & Artifact Verification
         run: |
           python reproducibility/verify_evidence.py
           python reproducibility/test_determinism.py
           python tools/generate_release_manifest.py --verify
+          python -m pytest tests/test_evidence_verifier.py

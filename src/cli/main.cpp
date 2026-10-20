@@ -24,6 +24,10 @@
 
 using namespace sha256_research;
 
+#ifndef SHA256_RESEARCH_VERSION
+#define SHA256_RESEARCH_VERSION "5.1.0"
+#endif
+
 // Search strategy drivers are defined after the option parser that dispatches
 // to them, so they are forward-declared here.
 struct SearchConfig;
@@ -32,7 +36,7 @@ int cmd_dobbertin_search(const SearchConfig& opt);
 
 void print_banner() {
     std::cout << "===============================================================\n"
-              << "   SHA-256 Cryptanalysis & Research Framework (v2.0.0)        \n"
+              << "   SHA-256 Cryptanalysis & Research Framework (v" << SHA256_RESEARCH_VERSION << ")\n"
               << "   Target: Windows 11 / Vulkan Compute / Multicore CPU / WSL  \n"
               << "===============================================================\n";
 }
@@ -1324,7 +1328,14 @@ int main(int argc, char* argv[]) {
 
     std::string cmd = argv[1];
 
-    if (cmd == "doctor") {
+    if (cmd == "--version" || cmd == "-v" || cmd == "version") {
+        std::cout << "sha-research " << SHA256_RESEARCH_VERSION << "\n";
+        return 0;
+    } else if (cmd == "--help" || cmd == "-h" || cmd == "help") {
+        print_banner();
+        print_help();
+        return 0;
+    } else if (cmd == "doctor") {
         return cmd_doctor();
     } else if (cmd == "bootstrap") {
         return cmd_bootstrap();

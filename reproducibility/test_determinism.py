@@ -182,7 +182,7 @@ def test_sqlite_query_determinism():
         print("SKIPPED (No sqlite db)")
         return True
 
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(f"file:{os.path.abspath(db_path)}?mode=ro", uri=True)
     res = conn.execute("PRAGMA integrity_check;").fetchall()
     if res != [("ok",)]:
         print("FAILED (PRAGMA integrity_check failed)")
