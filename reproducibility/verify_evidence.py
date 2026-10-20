@@ -71,8 +71,17 @@ def compute_evidence_root_hash(evidence_dir="evidence"):
 def is_safe_relative_path(base_dir, target_path):
     """
     Ensures target_path resolves strictly within base_dir (prevents directory traversal).
+    Guards against both POSIX and Windows absolute paths, drive letters, and UNC paths.
     """
-    if not target_path or os.path.isabs(target_path):
+    if not target_path:
+        return False
+    # Reject Windows drive specifiers (e.g. C:file, C:\file, C:/file) on all platforms
+    if len(target_path) >= 2 and target_path[1] == ':' and target_path[0].isalpha():
+        return False
+    # Reject absolute root path on either POSIX or Windows (leading / or \)
+    if target_path.startswith('/') or target_path.startswith('\\'):
+        return False
+    if os.path.isabs(target_path):
         return False
     if os.path.splitdrive(target_path)[0]:
         return False

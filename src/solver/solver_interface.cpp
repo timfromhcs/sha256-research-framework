@@ -236,28 +236,50 @@ public:
     bool is_available() const override {
         if (!is_safe_token(binary_)) return false;
         auto workdir = make_unique_workdir("probe");
-        std::string cmd;
-        if (run_via_wsl_) {
-            cmd = "wsl -d Ubuntu-22.04 -e which " + binary_;
-        } else {
-            cmd = "where " + quote_for_cmd(binary_);
+#if defined(_WIN32)
+        // Check native Windows binary first
+        {
+            auto out_win = run_command_capture("where " + quote_for_cmd(binary_), workdir);
+            if (out_win.exit_code == 0 && !out_win.stdout_str.empty()) {
+                run_via_wsl_ = false;
+                std::error_code ec;
+                std::filesystem::remove_all(workdir, ec);
+                return true;
+            }
         }
-        auto out = run_command_capture(cmd, workdir);
+        // Fallback: check WSL if requested
+        if (run_via_wsl_) {
+            auto out_wsl = run_command_capture("wsl -d Ubuntu-22.04 -e which " + binary_, workdir);
+            std::error_code ec;
+            std::filesystem::remove_all(workdir, ec);
+            return (out_wsl.exit_code == 0 && !out_wsl.stdout_str.empty());
+        }
         std::error_code ec;
         std::filesystem::remove_all(workdir, ec);
+        return false;
+#else
+        auto out = run_command_capture("which " + quote_for_cmd(binary_), workdir);
+        std::error_code ec;
+        std::filesystem::remove_all(workdir, ec);
+        run_via_wsl_ = false;
         return (out.exit_code == 0 && !out.stdout_str.empty());
+#endif
     }
 
     std::string version_string() const {
         if (!is_safe_token(binary_)) return {};
         auto workdir = make_unique_workdir("version");
         std::string cmd;
+#if defined(_WIN32)
         if (run_via_wsl_) {
             // Best effort: most SAT solvers print version with --version.
             cmd = "wsl -d Ubuntu-22.04 -e " + binary_ + " --version";
         } else {
             cmd = quote_for_cmd(binary_) + " --version";
         }
+#else
+        cmd = quote_for_cmd(binary_) + " --version";
+#endif
         auto out = run_command_capture(cmd, workdir);
         std::error_code ec;
         std::filesystem::remove_all(workdir, ec);
@@ -294,12 +316,16 @@ public:
         }
 
         std::string cmd;
+#if defined(_WIN32)
         if (run_via_wsl_) {
             std::string wsl_cnf = to_wsl_path(cnf_path.string());
             cmd = "wsl -d Ubuntu-22.04 -e timeout " + std::to_string(timeout_seconds) + " " + binary_ + " " + wsl_cnf;
         } else {
             cmd = quote_for_cmd(binary_) + " " + quote_for_cmd(cnf_path.string());
         }
+#else
+        cmd = "timeout " + std::to_string(timeout_seconds) + " " + quote_for_cmd(binary_) + " " + quote_for_cmd(cnf_path.string());
+#endif
         res.stats.command_line = cmd;
         res.stats.solver_version = version_string();
 
@@ -337,7 +363,7 @@ public:
 private:
     std::string name_;
     std::string binary_;
-    bool run_via_wsl_{false};
+    mutable bool run_via_wsl_{false};
 };
 
 class Z3SmtSolver : public ISolver {
@@ -345,16 +371,17 @@ public:
     std::string name() const override { return "Z3-SMT"; }
 
     bool is_available() const override {
-        auto workdir = make_unique_workdir("z3probe");
-        auto out = run_command_capture("python -c \"import z3; print(z3.get_version_string())\"", workdir);
-        std::error_code ec;
-        std::filesystem::remove_all(workdir, ec);
-        return out.exit_code == 0;
+        GenericSatSolver z3_cli("Z3", "z3", true);
+        return z3_cli.is_available();
     }
 
     SolverResult solve_cnf(const CnfFormula& cnf, uint32_t timeout_seconds) override {
-        // Can solve CNF via Z3 CLI or CaDiCaL
         GenericSatSolver z3_cli("Z3", "z3", true);
+        if (!z3_cli.is_available()) {
+            SolverResult r;
+            r.status = SolverStatus::Unknown;
+            return r;
+        }
         return z3_cli.solve_cnf(cnf, timeout_seconds);
     }
 };
