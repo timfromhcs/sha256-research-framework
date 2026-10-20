@@ -314,6 +314,20 @@ int cmd_experiment_run(int rounds, const std::string& solver_str, const std::str
     auto solver = SolverFactory::create(st);
     if (!solver || !solver->is_available()) {
         std::cout << "   Error: Solver " << meta.solver_name << " is not available.\n";
+        std::cout << "RESULT_CANDIDATE=NONE\n";
+        std::cout << "RESULT_TARGET_DIGEST=" << target_digest.to_hex() << "\n";
+        std::cout << "RESULT_ROUNDS=" << rounds << "\n";
+        std::cout << "RESULT_CLASSIFICATION=SolverUnavailable\n";
+        std::cout << "RESULT_CNF_VARS=" << enc.cnf.num_vars << "\n";
+        std::cout << "RESULT_CNF_CLAUSES=" << enc.cnf.clauses.size() << "\n";
+        std::cout << "RESULT_CNF_XORS=" << enc.cnf.xor_constraints.size() << "\n";
+        std::cout << "RESULT_ENCODING=" << dialect_name(dialect) << "\n";
+        std::cout << "RESULT_CARRY_SAVE=" << (carry_save ? 1 : 0) << "\n";
+        std::cout << "RESULT_ENCODE_TIME=" << encode_seconds << "\n";
+        std::cout << "RESULT_SOLVER_TIME=0.0\n";
+        std::cout << "RESULT_SOLVER_STATUS=UNAVAILABLE\n";
+        std::cout << "RESULT_SOLVER_EXIT=-1\n";
+        std::cout.flush();
         return 1;
     }
 
