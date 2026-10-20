@@ -3,7 +3,7 @@
 ## Release v5.1.0 Validation Build (Current Candidate)
 
 **Generated**: 2026-10-20
-**Source Commit**: `050cff7b254078f5c4e35aadb995a2be5a4bfe87`
+**Source Commit**: `2e04195d6012fa68441817407f66f67ba51c9e0a`
 **Version**: 5.1.0
 **Status**: SUCCESS (Exit Code: 0)
 
